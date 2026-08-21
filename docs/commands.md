@@ -57,12 +57,19 @@ of view; confirm the ID before execution.
 ./bin/docbase delete-post --post-id <post-id>
 ```
 
-### `archive-post` / `unarchive-post`
+### `archive-post`
 
-Archive or restore a post after the owner check.
+Archive a post after the owner check.
 
 ```sh
 ./bin/docbase archive-post --post-id <post-id>
+```
+
+### `unarchive-post`
+
+Restore an archived post after the owner check.
+
+```sh
 ./bin/docbase unarchive-post --post-id <post-id>
 ```
 
@@ -114,13 +121,27 @@ Delete a comment by ID. Confirm the comment ID before execution.
 
 ## Team, users, tags, and groups
 
-### `get-tags` / `get-team` / `profile`
+### `get-tags`
 
-Fetch team tags, team information, or the authenticated profile.
+Fetch team tags.
 
 ```sh
 ./bin/docbase get-tags
+```
+
+### `get-team`
+
+Fetch team information.
+
+```sh
 ./bin/docbase get-team
+```
+
+### `profile`
+
+Fetch the authenticated profile.
+
+```sh
 ./bin/docbase profile
 ```
 
@@ -132,12 +153,19 @@ Search users by an optional query. The default page size is 100.
 ./bin/docbase search-users --query "name"
 ```
 
-### `search-groups` / `get-group`
+### `search-groups`
 
-Search groups by exact name or fetch one group by ID.
+Search groups by exact name.
 
 ```sh
 ./bin/docbase search-groups --name "Readers"
+```
+
+### `get-group`
+
+Fetch one group by ID.
+
+```sh
 ./bin/docbase get-group --group-id <group-id>
 ```
 
@@ -149,12 +177,19 @@ Create a group with an optional description.
 ./bin/docbase create-group --name "Readers" --description "Read-only group"
 ```
 
-### `add-users-to-group` / `remove-users-from-group`
+### `add-users-to-group`
 
-Change group membership. Repeat `--user-id` for multiple users.
+Add users to a group. Repeat `--user-id` for multiple users.
 
 ```sh
 ./bin/docbase add-users-to-group --group-id <group-id> --user-id <user-id>
+```
+
+### `remove-users-from-group`
+
+Remove users from a group. Repeat `--user-id` for multiple users.
+
+```sh
 ./bin/docbase remove-users-from-group --group-id <group-id> --user-id <user-id>
 ```
 
