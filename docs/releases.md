@@ -29,7 +29,7 @@ provides `bash`, or invoke the Python script directly with Python 3.12+.
 ## For maintainers
 
 Update `VERSION` in `docbase.py`, add a release note under
-`docs/releases/<version>.md`, and run the offline checks before creating an
+`docs/releases/<tag>.md`, and run the offline checks before creating an
 annotated semantic-version tag:
 
 ```sh
