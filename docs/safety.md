@@ -1,0 +1,44 @@
+# Safety model
+
+This CLI includes safeguards because an AI agent may be the caller. The
+safeguards reduce accidental publication or mutation; they do not replace
+human authorization or DocBase permissions.
+
+## New posts
+
+`create-post` is intentionally restrictive by default. This is accepted:
+
+```sh
+./bin/docbase create-post \
+  --title "A draft" \
+  --body "内容" \
+  --draft \
+  --scope private
+```
+
+Any other draft/publication combination is rejected unless the caller adds
+`--allow-public`. That flag is an explicit acknowledgement that the normal
+private-draft policy is being bypassed.
+
+## Existing posts
+
+Before `update-post`, `delete-post`, `archive-post`, `unarchive-post`, or
+`patch-post-body`, the CLI compares the authenticated profile ID with the post
+creator ID. A mismatch or an unavailable ID blocks the operation. `--force`
+skips this check and must be reserved for a caller that has already confirmed
+the target and authorization.
+
+## Other mutations
+
+Comments and group membership are API mutations but do not use the post-owner
+check. Confirm the post, comment, group, and user IDs before invoking them.
+
+## Agent contract
+
+An agent should:
+
+1. resolve the intended team and target IDs;
+2. explain the mutation in plain language before executing it;
+3. use the safest command and omit `--allow-public`/`--force` unless explicitly
+   authorized;
+4. inspect the JSON response and report the result without exposing the token.
