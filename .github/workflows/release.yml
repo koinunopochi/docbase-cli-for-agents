@@ -57,7 +57,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          notes_file="docs/releases/${RELEASE_TAG#v}.md"
+          notes_file="docs/releases/${RELEASE_TAG}.md"
           if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
             gh release upload "${RELEASE_TAG}" dist/* --clobber
           elif [[ -f "${notes_file}" ]]; then
