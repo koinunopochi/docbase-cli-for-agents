@@ -31,6 +31,16 @@ Start with help. Every command points to its detailed reference:
 See [the command reference](docs/commands.md), [authentication](docs/authentication.md),
 and [the safety model](docs/safety.md) for details.
 
+## Downloads
+
+Published releases contain ready-to-run archives with the launcher, source,
+documentation, `LICENSE`, and `NOTICE`. Install `uv`, download the archive from
+the GitHub Releases page, verify `SHA256SUMS`, and extract it. You do not need a
+local build.
+
+See [the release guide](docs/releases.md) for the asset names and verification
+steps.
+
 ## Safety defaults
 
 - `create-post` requires `--draft --scope private` unless the caller explicitly
@@ -53,9 +63,9 @@ make test
 make lint
 ```
 
-The tests are offline and do not require a DocBase account. There is deliberately
-no release workflow while this repository is private; release automation and
-downloadable release artifacts can be added after the repository is made public.
+The tests are offline and do not require a DocBase account. Release archives
+are built by GitHub Actions when a `v*` tag is pushed. The repository's
+[release guide](docs/releases.md) documents the maintainer flow.
 
 ## License
 

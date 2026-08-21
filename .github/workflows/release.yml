@@ -1,0 +1,73 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: true
+
+      - name: Install Python 3.12
+        run: uv python install 3.12
+
+      - name: Test and lint
+        run: |
+          uv run --python 3.12 tests/test_docbase.py
+          uv run --python 3.12 --with ruff ruff check docbase.py tests
+
+      - name: Build release archives
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          project="docbase-cli-for-agents"
+          stem="${project}_${RELEASE_TAG}"
+          rm -rf build dist
+          mkdir -p "build/${stem}/bin" "build/${stem}/docs" dist
+
+          cp docbase.py README.md LICENSE NOTICE "build/${stem}/"
+          cp bin/docbase "build/${stem}/bin/"
+          cp docs/*.md "build/${stem}/docs/"
+
+          tar -C build -czf "dist/${stem}.tar.gz" "${stem}"
+          (cd build && python3 -m zipfile -c "../dist/${stem}.zip" "${stem}")
+          (cd dist && sha256sum *.tar.gz *.zip > SHA256SUMS)
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          notes_file="docs/releases/${RELEASE_TAG#v}.md"
+          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            gh release upload "${RELEASE_TAG}" dist/* --clobber
+          elif [[ -f "${notes_file}" ]]; then
+            gh release create "${RELEASE_TAG}" dist/* \
+              --verify-tag \
+              --title "${RELEASE_TAG}" \
+              --notes-file "${notes_file}"
+          else
+            gh release create "${RELEASE_TAG}" dist/* \
+              --verify-tag \
+              --title "${RELEASE_TAG}" \
+              --generate-notes
+          fi
