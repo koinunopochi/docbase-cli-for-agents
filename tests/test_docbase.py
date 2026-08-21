@@ -44,6 +44,7 @@ class BuildRequestTest(unittest.TestCase):
         self.assertTrue(req.full_url.startswith("https://api.docbase.io/teams/myteam/posts?"))
         self.assertIn("q=hello", req.full_url)
         self.assertEqual(req.get_header("X-docbasetoken"), "tok")
+        self.assertEqual(req.get_header("User-agent"), f"docbase-cli-for-agents/{MODULE.VERSION}")
         self.assertIsNone(req.data)
 
     def test_create_post_request_has_json_body(self) -> None:

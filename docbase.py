@@ -25,6 +25,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+VERSION = "0.0.1"
+
 
 class DocBaseError(Exception):
     pass
@@ -70,7 +72,7 @@ def build_request(
     headers = {
         "X-DocBaseToken": token,
         "Content-Type": "application/json",
-        "User-Agent": "docbase-cli-for-agents/0.1.0",
+        "User-Agent": f"docbase-cli-for-agents/{VERSION}",
     }
     if body is not None:
         data = json.dumps(body, ensure_ascii=False).encode("utf-8")
@@ -352,6 +354,7 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=f"Detailed documentation: {COMMANDS_DOC_URL}",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+    parser.add_argument("--version", action="version", version=f"%(prog)s {VERSION}")
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_search = command_parser(sub, "search-posts", help_text="DocBase の投稿を検索する")
