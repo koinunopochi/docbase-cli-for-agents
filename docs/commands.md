@@ -195,6 +195,24 @@ Remove users from a group. Repeat `--user-id` for multiple users.
 
 ## Attachments
 
+### `upload-attachment`
+
+Upload one or more local files to the team's DocBase attachment endpoint. The
+CLI reads each file as binary data, preserves only its basename, and sends the
+content as Base64. Repeat `--file` to include multiple files in one request.
+The API decides whether the file format is accepted and how the returned URL is
+rendered; the CLI does not inspect video codecs or provide a playback
+guarantee.
+
+```sh
+./bin/docbase upload-attachment \
+  --file ./media/clip.mp4 \
+  --file ./media/clip.mov
+```
+
+This is a mutating operation. Confirm the target team and local file paths
+before running it. The official API documents a 100MB request-size limit.
+
 ### `download-attachment`
 
 Download an attachment to the exact path given by `--output`. The command
