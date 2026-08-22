@@ -55,6 +55,12 @@ class BuildRequestTest(unittest.TestCase):
         self.assertEqual(json.loads(req.data.decode("utf-8")), {"title": "t", "body": "b", "tags": [], "draft": False})
         self.assertEqual(req.get_header("Content-type"), "application/json")
 
+    def test_upload_attachment_request_accepts_array_body(self) -> None:
+        req = MODULE.build_request(
+            "myteam", "tok", "POST", "/attachments", body=[{"name": "clip.mp4", "content": "AA=="}]
+        )
+        self.assertEqual(json.loads(req.data.decode("utf-8")), [{"name": "clip.mp4", "content": "AA=="}])
+
     def test_domain_is_url_quoted(self) -> None:
         req = MODULE.build_request("my team", "tok", "GET", "/profile")
         self.assertIn("my%20team", req.full_url)
@@ -311,6 +317,39 @@ class DownloadAttachmentTest(unittest.TestCase):
             self.assertEqual(result, {"attachment_id": "abc123", "output_path": out_path, "size": len(b"binary-data")})
 
 
+class UploadAttachmentTest(unittest.TestCase):
+    @mock.patch.object(MODULE, "docbase_request")
+    def test_encodes_mp4_bytes_and_uses_basename(self, mock_request: mock.Mock) -> None:
+        import tempfile
+
+        mock_request.return_value = [{"name": "clip.mp4"}]
+        with tempfile.TemporaryDirectory() as tmpdir:
+            file_path = Path(tmpdir) / "clip.mp4"
+            file_path.write_bytes(b"mock-mp4-bytes")
+
+            result = MODULE.upload_attachments("d", "t", [str(file_path)])
+
+        mock_request.assert_called_once_with(
+            "d",
+            "t",
+            "POST",
+            "/attachments",
+            body=[
+                {
+                    "name": "clip.mp4",
+                    "content": MODULE.base64.b64encode(b"mock-mp4-bytes").decode("ascii"),
+                }
+            ],
+        )
+        self.assertEqual(result, [{"name": "clip.mp4"}])
+
+    @mock.patch.object(MODULE, "docbase_request")
+    def test_rejects_missing_file_without_api_call(self, mock_request: mock.Mock) -> None:
+        with self.assertRaises(MODULE.DocBaseError):
+            MODULE.upload_attachments("d", "t", ["missing.mp4"])
+        mock_request.assert_not_called()
+
+
 class DispatchTest(unittest.TestCase):
     @mock.patch.object(MODULE, "search_posts")
     def test_search_posts_dispatch(self, mock_search: mock.Mock) -> None:
@@ -440,6 +479,14 @@ class DispatchTest(unittest.TestCase):
         )
         MODULE.dispatch(args, "d", "tok")
         mock_download.assert_called_once_with("d", "tok", "abc", "/tmp/out.bin")
+
+    @mock.patch.object(MODULE, "upload_attachments")
+    def test_upload_attachment_dispatch_collects_repeated_files(self, mock_upload: mock.Mock) -> None:
+        args = MODULE.build_parser().parse_args(
+            ["upload-attachment", "--file", "clip.mp4", "--file", "clip.mov"]
+        )
+        MODULE.dispatch(args, "d", "tok")
+        mock_upload.assert_called_once_with("d", "tok", ["clip.mp4", "clip.mov"])
 
 
 if __name__ == "__main__":

@@ -18,12 +18,14 @@ configuration, arguments, or a blocked safety-policy override.
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
 import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+from pathlib import Path
 
 VERSION = "0.0.1"
 
@@ -59,7 +61,7 @@ def build_request(
     method: str,
     path: str,
     params: dict[str, object] | None = None,
-    body: dict[str, object] | None = None,
+    body: object | None = None,
 ) -> urllib.request.Request:
     base = f"https://api.docbase.io/teams/{urllib.parse.quote(domain)}"
     url = base + path
@@ -86,7 +88,7 @@ def docbase_request(
     method: str,
     path: str,
     params: dict[str, object] | None = None,
-    body: dict[str, object] | None = None,
+    body: object | None = None,
     timeout: int = 30,
 ) -> object:
     req = build_request(domain, token, method, path, params=params, body=body)
@@ -314,6 +316,27 @@ def remove_users_from_group(domain: str, token: str, group_id: int, user_ids: li
     )
 
 
+def _read_attachment(file_path: str) -> dict[str, str]:
+    path = Path(file_path)
+    try:
+        content = path.read_bytes()
+    except OSError as exc:
+        raise DocBaseError(f"添付ファイルを読み込めません: {file_path}") from exc
+
+    return {
+        "name": path.name,
+        "content": base64.b64encode(content).decode("ascii"),
+    }
+
+
+def upload_attachments(domain: str, token: str, file_paths: list[str]) -> object:
+    if not file_paths:
+        raise DocBaseError("At least one attachment file is required")
+
+    attachments = [_read_attachment(file_path) for file_path in file_paths]
+    return docbase_request(domain, token, "POST", "/attachments", body=attachments)
+
+
 def download_attachment(domain: str, token: str, attachment_id: str, output_path: str) -> object:
     req = build_request(domain, token, "GET", f"/attachments/{attachment_id}")
     try:
@@ -486,6 +509,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_download.add_argument("--attachment-id", required=True, help="添付ファイルの ID")
     p_download.add_argument("--output", required=True, help="保存先のファイルパス")
 
+    p_upload = command_parser(sub, "upload-attachment", help_text="添付ファイルをアップロードする")
+    p_upload.add_argument(
+        "--file",
+        dest="files",
+        action="append",
+        required=True,
+        help="アップロードするローカルファイル。複数指定可",
+    )
+
     command_parser(sub, "profile", help_text="設定済みトークンのプロフィールを取得する")
 
     return parser
@@ -569,6 +601,8 @@ def dispatch(args: argparse.Namespace, domain: str, token: str) -> object:
         return add_users_to_group(domain, token, args.group_id, args.user_ids)
     if args.command == "remove-users-from-group":
         return remove_users_from_group(domain, token, args.group_id, args.user_ids)
+    if args.command == "upload-attachment":
+        return upload_attachments(domain, token, args.files)
     if args.command == "download-attachment":
         return download_attachment(domain, token, args.attachment_id, args.output)
     if args.command == "profile":

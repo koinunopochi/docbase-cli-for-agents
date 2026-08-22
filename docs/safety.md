@@ -33,6 +33,10 @@ the target and authorization.
 Comments and group membership are API mutations but do not use the post-owner
 check. Confirm the post, comment, group, and user IDs before invoking them.
 
+Attachment uploads are also API mutations. Confirm the target team and each
+local file path before invoking `upload-attachment`. The command sends file
+contents to DocBase and does not publish a post by itself.
+
 ## Agent contract
 
 An agent should:
