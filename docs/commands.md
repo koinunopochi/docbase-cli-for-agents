@@ -100,7 +100,10 @@ the expected current text. Ownership is checked unless `--force` is supplied.
 Use `--no-notice` to suppress the update notice and `--include-body` to ask for
 the updated body in the response.
 
-`--content` is subject to the same H1 rejection as `create-post`'s `--body`.
+`--content` is subject to the same H1 rejection as `create-post`'s `--body`,
+but only the fragment you pass is inspected — not the post body that results
+after the patch is applied — and the reported line number is relative to
+`--content`, not to `--start`/`--end`.
 
 ## Comments
 

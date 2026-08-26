@@ -29,6 +29,13 @@ a fenced code block, so the title is not duplicated inside the body. There is
 no override flag for this check — restructure the body to use `##` or smaller
 instead.
 
+`patch-post-body --content` only inspects the replacement fragment you pass,
+not the resulting post body. It cannot tell whether the replacement introduces
+or removes an H1 in the context of the surrounding, unpatched text, and its
+error message reports a line number relative to `--content`, not to
+`--start`/`--end`. Confirm the resulting body separately (e.g. with `get-post`)
+when a patch operation spans a heading boundary.
+
 ## Existing posts
 
 Before `update-post`, `delete-post`, `archive-post`, `unarchive-post`, or
