@@ -29,6 +29,11 @@ Create a post. The safe default requires `--draft --scope private`; use
 `--allow-public` only when the caller has explicitly authorized a different
 publication state. Repeat `--tag` to add multiple tags.
 
+`--body` is rejected if it contains an ATX H1 heading (a line starting with
+`# `, or a line that is just `#`) outside a fenced code block. DocBase renders
+the post title as an H1 already, so a body H1 duplicates it. Use `##` or
+smaller for in-body headings; put the title only in `--title`.
+
 ```sh
 ./bin/docbase create-post \
   --title "Draft title" \
@@ -42,6 +47,10 @@ publication state. Repeat `--tag` to add multiple tags.
 
 Update one or more of title, body, tags, draft state, or scope. The CLI checks
 post ownership unless `--force` is supplied.
+
+When `--body` is supplied, it is subject to the same H1 rejection as
+`create-post`. This check runs even with `--force`, since it is unrelated to
+the ownership check.
 
 ```sh
 ./bin/docbase update-post --post-id <post-id> --title "Revised title"
@@ -90,6 +99,8 @@ the expected current text. Ownership is checked unless `--force` is supplied.
 
 Use `--no-notice` to suppress the update notice and `--include-body` to ask for
 the updated body in the response.
+
+`--content` is subject to the same H1 rejection as `create-post`'s `--body`.
 
 ## Comments
 

@@ -49,6 +49,8 @@ steps.
   `patch-post-body` verify that the authenticated user created the post.
 - `--force` bypasses that owner check and should only be used after the caller
   has explicitly confirmed the target.
+- `create-post`, `update-post`, and `patch-post-body` reject an H1 heading
+  (`# `) in the body, since DocBase already renders the title as an H1.
 - Attachment downloads write only to the path supplied by the caller and return
   a JSON summary on success.
 

@@ -91,6 +91,43 @@ class CreatePostPolicyTest(unittest.TestCase):
         MODULE.create_post("d", "t", "title", "body", draft=False, scope="everyone", allow_public=True)
         mock_request.assert_called_once()
 
+    @mock.patch.object(MODULE, "docbase_request")
+    def test_rejects_h1_heading_in_body(self, mock_request: mock.Mock) -> None:
+        with self.assertRaises(MODULE.DocBaseError):
+            MODULE.create_post(
+                "d", "t", "title", "# same as title\nbody", draft=True, scope="private"
+            )
+        mock_request.assert_not_called()
+
+
+class FindH1HeadingLineTest(unittest.TestCase):
+    def test_no_heading_returns_none(self) -> None:
+        self.assertIsNone(MODULE._find_h1_heading_line("plain body\nwith no heading"))
+
+    def test_detects_atx_h1_with_space(self) -> None:
+        self.assertEqual(MODULE._find_h1_heading_line("intro\n# Heading\nmore"), 2)
+
+    def test_detects_bare_hash_line(self) -> None:
+        self.assertEqual(MODULE._find_h1_heading_line("#\nbody"), 1)
+
+    def test_h2_is_not_flagged(self) -> None:
+        self.assertIsNone(MODULE._find_h1_heading_line("## Heading\nbody"))
+
+    def test_hash_without_space_is_not_a_heading(self) -> None:
+        self.assertIsNone(MODULE._find_h1_heading_line("#nothashheading\nbody"))
+
+    def test_hash_inside_code_fence_is_ignored(self) -> None:
+        body = "```bash\n# comment, not a heading\n```\nbody"
+        self.assertIsNone(MODULE._find_h1_heading_line(body))
+
+    def test_heading_after_code_fence_is_detected(self) -> None:
+        body = "```bash\n# comment\n```\n# real heading"
+        self.assertEqual(MODULE._find_h1_heading_line(body), 4)
+
+    def test_tilde_fence_is_also_recognized(self) -> None:
+        body = "~~~\n# comment\n~~~\nbody"
+        self.assertIsNone(MODULE._find_h1_heading_line(body))
+
 
 class UpdatePostOwnerCheckTest(unittest.TestCase):
     def test_rejects_empty_update_even_with_force(self) -> None:
@@ -151,6 +188,18 @@ class UpdatePostTest(unittest.TestCase):
         MODULE.update_post("d", "t", 1, draft=False, force=True)
         _, kwargs = mock_request.call_args
         self.assertEqual(kwargs["body"], {"draft": False})
+
+    @mock.patch.object(MODULE, "docbase_request")
+    def test_body_omitted_skips_h1_check(self, mock_request: mock.Mock) -> None:
+        mock_request.return_value = {"id": 1}
+        MODULE.update_post("d", "t", 1, title="new title", force=True)
+        mock_request.assert_called_once()
+
+    @mock.patch.object(MODULE, "docbase_request")
+    def test_rejects_h1_heading_in_body_even_with_force(self, mock_request: mock.Mock) -> None:
+        with self.assertRaises(MODULE.DocBaseError):
+            MODULE.update_post("d", "t", 1, body="# same as title", force=True)
+        mock_request.assert_not_called()
 
 
 class DeletePostOwnerCheckTest(unittest.TestCase):
@@ -228,6 +277,12 @@ class PatchPostBodyTest(unittest.TestCase):
                 "include_body": False,
             },
         )
+
+    @mock.patch.object(MODULE, "docbase_request")
+    def test_rejects_h1_heading_in_content(self, mock_request: mock.Mock) -> None:
+        with self.assertRaises(MODULE.DocBaseError):
+            MODULE.patch_post_body("d", "t", 1, 1, 2, "old", "# same as title", force=True)
+        mock_request.assert_not_called()
 
 
 class CommentsTest(unittest.TestCase):
