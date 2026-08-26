@@ -30,9 +30,12 @@ Create a post. The safe default requires `--draft --scope private`; use
 publication state. Repeat `--tag` to add multiple tags.
 
 `--body` is rejected if it contains an ATX H1 heading (a line starting with
-`# `, or a line that is just `#`) outside a fenced code block. DocBase renders
-the post title as an H1 already, so a body H1 duplicates it. Use `##` or
-smaller for in-body headings; put the title only in `--title`.
+`# `, or a line that is just `#`) outside a fenced (``` / ~~~) code block.
+DocBase renders the post title as an H1 already, so a body H1 duplicates it.
+Use `##` or smaller for in-body headings; put the title only in `--title`.
+Note that 4-space-indented code blocks aren't recognized as code by this
+check, only fenced ones — a `#` inside an indented block is still rejected.
+See [safety.md](./safety.md#body-content) for details.
 
 ```sh
 ./bin/docbase create-post \
