@@ -20,6 +20,27 @@ Any other draft/publication combination is rejected unless the caller adds
 `--allow-public`. That flag is an explicit acknowledgement that the normal
 private-draft policy is being bypassed.
 
+## Body content
+
+DocBase already renders a post's title as an H1. `create-post --body`,
+`update-post --body`, and `patch-post-body --content` reject any ATX H1
+heading (a line starting with `# `, or a line that is just `#`) found outside
+a fenced (``` / ~~~) code block, so the title is not duplicated inside the
+body. There is no override flag for this check — restructure the body to use
+`##` or smaller instead.
+
+The check only recognizes ``` / ~~~ fences, not 4-space-indented code blocks.
+A `#` inside an indented code block is treated as a heading and rejected, even
+though it renders as code. Use a fenced block instead of indentation if the
+code you're including happens to contain a line starting with `#`.
+
+`patch-post-body --content` only inspects the replacement fragment you pass,
+not the resulting post body. It cannot tell whether the replacement introduces
+or removes an H1 in the context of the surrounding, unpatched text, and its
+error message reports a line number relative to `--content`, not to
+`--start`/`--end`. Confirm the resulting body separately (e.g. with `get-post`)
+when a patch operation spans a heading boundary.
+
 ## Existing posts
 
 Before `update-post`, `delete-post`, `archive-post`, `unarchive-post`, or
