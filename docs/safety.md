@@ -20,6 +20,15 @@ Any other draft/publication combination is rejected unless the caller adds
 `--allow-public`. That flag is an explicit acknowledgement that the normal
 private-draft policy is being bypassed.
 
+## Body content
+
+DocBase already renders a post's title as an H1. `create-post --body`,
+`update-post --body`, and `patch-post-body --content` reject any ATX H1
+heading (a line starting with `# `, or a line that is just `#`) found outside
+a fenced code block, so the title is not duplicated inside the body. There is
+no override flag for this check — restructure the body to use `##` or smaller
+instead.
+
 ## Existing posts
 
 Before `update-post`, `delete-post`, `archive-post`, `unarchive-post`, or
