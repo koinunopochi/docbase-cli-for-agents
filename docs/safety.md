@@ -6,19 +6,19 @@ human authorization or DocBase permissions.
 
 ## New posts
 
-`create-post` is intentionally restrictive by default. This is accepted:
+`create-post` always creates a private draft. The command accepts the title,
+body, and optional tags, but it has no option for changing the publication
+state.
 
 ```sh
 ./bin/docbase create-post \
   --title "A draft" \
   --body "内容" \
-  --draft \
-  --scope private
+  --tag example
 ```
 
-Any other draft/publication combination is rejected unless the caller adds
-`--allow-public`. That flag is an explicit acknowledgement that the normal
-private-draft policy is being bypassed.
+To publish a post, use an owner-checked update operation after the draft has
+been reviewed.
 
 ## Body content
 
@@ -45,9 +45,8 @@ when a patch operation spans a heading boundary.
 
 Before `update-post`, `delete-post`, `archive-post`, `unarchive-post`, or
 `patch-post-body`, the CLI compares the authenticated profile ID with the post
-creator ID. A mismatch or an unavailable ID blocks the operation. `--force`
-skips this check and must be reserved for a caller that has already confirmed
-the target and authorization.
+creator ID. A mismatch or an unavailable ID blocks the operation. This CLI has
+no path for bypassing that check.
 
 ## Other mutations
 
@@ -64,6 +63,5 @@ An agent should:
 
 1. resolve the intended team and target IDs;
 2. explain the mutation in plain language before executing it;
-3. use the safest command and omit `--allow-public`/`--force` unless explicitly
-   authorized;
+3. use the safest command and confirm the target before executing a mutation;
 4. inspect the JSON response and report the result without exposing the token.
