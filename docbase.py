@@ -13,7 +13,7 @@ executable help and follow its detailed documentation link:
     docbase <command> --help
 
 Exit codes are 0 for success, 1 for an API or network error, and 2 for invalid
-configuration, arguments, or a blocked safety-policy override.
+configuration, arguments, or a blocked safety policy.
 """
 from __future__ import annotations
 
@@ -178,19 +178,15 @@ def create_post(
     title: str,
     body: str,
     tags: list[str] | None = None,
-    draft: bool = False,
-    scope: str | None = None,
-    allow_public: bool = False,
 ) -> object:
-    if not allow_public and not (draft is True and scope == "private"):
-        raise DocBaseError(
-            "新規投稿は --draft --scope private が既定です（誤って公開範囲を広げる事故を防ぐため）。"
-            "公開したい場合は --allow-public を明示してください。"
-        )
     _check_no_h1_heading(body)
-    payload: dict[str, object] = {"title": title, "body": body, "tags": tags or [], "draft": draft}
-    if scope is not None:
-        payload["scope"] = scope
+    payload: dict[str, object] = {
+        "title": title,
+        "body": body,
+        "tags": tags or [],
+        "draft": True,
+        "scope": "private",
+    }
     return docbase_request(domain, token, "POST", "/posts", body=payload)
 
 
@@ -203,10 +199,8 @@ def update_post(
     tags: list[str] | None = None,
     draft: bool | None = None,
     scope: str | None = None,
-    force: bool = False,
 ) -> object:
-    if not force:
-        _check_post_owner(domain, token, post_id)
+    _check_post_owner(domain, token, post_id)
     if body is not None:
         _check_no_h1_heading(body)
 
@@ -231,7 +225,7 @@ def _check_post_owner(domain: str, token: str, post_id: int) -> None:
 
     自分以外が作成した投稿の更新・削除・アーカイブ操作は事故（他人の記事の
     意図しない書き換え・削除・公開範囲変更）につながるため、既定で拒否する。
-    確認済みで進めたい場合は呼び出し側で force=True にしてこの関数をスキップする。
+    このCLIには所有者確認を解除する経路を設けない。
     """
     profile = get_profile(domain, token)
     my_id = profile.get("id") if isinstance(profile, dict) else None
@@ -243,30 +237,26 @@ def _check_post_owner(domain: str, token: str, post_id: int) -> None:
     if my_id is None or creator_id is None:
         raise DocBaseError(
             f"投稿 #{post_id} の所有者を確認できませんでした（profile/post から id を取得できません）。"
-            "確認済みなら --force を付けてください。"
         )
     if my_id != creator_id:
         raise DocBaseError(
             f"投稿 #{post_id} は自分以外のユーザー（id={creator_id}）が作成しています。"
-            f"自分（id={my_id}）以外が作成した投稿は操作できません。確認済みなら --force を付けてください。"
+            f"自分（id={my_id}）以外が作成した投稿はこのCLIで操作できません。"
         )
 
 
-def delete_post(domain: str, token: str, post_id: int, force: bool = False) -> object:
-    if not force:
-        _check_post_owner(domain, token, post_id)
+def delete_post(domain: str, token: str, post_id: int) -> object:
+    _check_post_owner(domain, token, post_id)
     return docbase_request(domain, token, "DELETE", f"/posts/{int(post_id)}")
 
 
-def archive_post(domain: str, token: str, post_id: int, force: bool = False) -> object:
-    if not force:
-        _check_post_owner(domain, token, post_id)
+def archive_post(domain: str, token: str, post_id: int) -> object:
+    _check_post_owner(domain, token, post_id)
     return docbase_request(domain, token, "PUT", f"/posts/{int(post_id)}/archive")
 
 
-def unarchive_post(domain: str, token: str, post_id: int, force: bool = False) -> object:
-    if not force:
-        _check_post_owner(domain, token, post_id)
+def unarchive_post(domain: str, token: str, post_id: int) -> object:
+    _check_post_owner(domain, token, post_id)
     return docbase_request(domain, token, "PUT", f"/posts/{int(post_id)}/unarchive")
 
 
@@ -280,10 +270,8 @@ def patch_post_body(
     content: str,
     notice: bool = True,
     include_body: bool = False,
-    force: bool = False,
 ) -> object:
-    if not force:
-        _check_post_owner(domain, token, post_id)
+    _check_post_owner(domain, token, post_id)
     _check_no_h1_heading(content, field_label="置換後の content（--start/--end の行番号ではなく content 内の相対行）")
     payload = {
         "operations": [
@@ -441,20 +429,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_get = command_parser(sub, "get-post", help_text="投稿 ID で1件取得する")
     p_get.add_argument("--post-id", type=int, required=True, help="取得する投稿の ID")
 
-    p_create = command_parser(sub, "create-post", help_text="投稿を作成する")
+    p_create = command_parser(sub, "create-post", help_text="個人の下書きとして投稿を作成する")
     p_create.add_argument("--title", required=True, help="投稿タイトル")
     p_create.add_argument(
         "--body", required=True, help="投稿本文（Markdown）。H1 見出し（`# `）は title と重複するため拒否される"
     )
     p_create.add_argument("--tag", dest="tags", action="append", default=[], help="付与するタグ名。複数指定可")
-    p_create.add_argument("--draft", action="store_true", default=False, help="下書きとして作成する（--allow-public 無しでは実質必須）")
-    p_create.add_argument("--scope", default=None, help="公開範囲（例: everyone / group / private）")
-    p_create.add_argument(
-        "--allow-public",
-        action="store_true",
-        default=False,
-        help="draft: true + scope: private 以外での作成を明示的に許可する（安全ポリシーの解除）",
-    )
 
     p_update = command_parser(sub, "update-post", help_text="投稿を更新する")
     p_update.add_argument("--post-id", type=int, required=True, help="更新する投稿の ID")
@@ -473,30 +453,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     draft_group.add_argument("--publish", dest="draft", action="store_false", help="公開に変更する（--draft と同時指定不可）")
     p_update.add_argument("--scope", default=None, help="更新後の公開範囲。省略時は変更しない")
-    p_update.add_argument(
-        "--force",
-        action="store_true",
-        default=False,
-        help="所有者確認（自分が作成した投稿かどうか）をスキップする（安全ポリシーの解除）",
-    )
 
     p_delete = command_parser(sub, "delete-post", help_text="投稿を削除する")
     p_delete.add_argument("--post-id", type=int, required=True, help="削除する投稿の ID")
-    p_delete.add_argument(
-        "--force", action="store_true", default=False, help="所有者確認をスキップする（安全ポリシーの解除）"
-    )
 
     p_archive = command_parser(sub, "archive-post", help_text="投稿をアーカイブする")
     p_archive.add_argument("--post-id", type=int, required=True, help="アーカイブする投稿の ID")
-    p_archive.add_argument(
-        "--force", action="store_true", default=False, help="所有者確認をスキップする（安全ポリシーの解除）"
-    )
 
     p_unarchive = command_parser(sub, "unarchive-post", help_text="投稿のアーカイブを解除する")
     p_unarchive.add_argument("--post-id", type=int, required=True, help="アーカイブを解除する投稿の ID")
-    p_unarchive.add_argument(
-        "--force", action="store_true", default=False, help="所有者確認をスキップする（安全ポリシーの解除）"
-    )
 
     p_patch = command_parser(sub, "patch-post-body", help_text="投稿本文の一部範囲だけを置き換える")
     p_patch.add_argument("--post-id", type=int, required=True, help="対象の投稿 ID")
@@ -513,9 +478,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_patch.add_argument(
         "--include-body", action="store_true", default=False, help="レスポンスに更新後の本文を含める"
-    )
-    p_patch.add_argument(
-        "--force", action="store_true", default=False, help="所有者確認をスキップする（安全ポリシーの解除）"
     )
 
     p_get_comments = command_parser(sub, "get-comments", help_text="投稿のコメント一覧を取得する")
@@ -598,9 +560,6 @@ def dispatch(args: argparse.Namespace, domain: str, token: str) -> object:
             args.title,
             args.body,
             tags=args.tags,
-            draft=args.draft,
-            scope=args.scope,
-            allow_public=args.allow_public,
         )
     if args.command == "update-post":
         return update_post(
@@ -612,14 +571,13 @@ def dispatch(args: argparse.Namespace, domain: str, token: str) -> object:
             tags=args.tags,
             draft=args.draft,
             scope=args.scope,
-            force=args.force,
         )
     if args.command == "delete-post":
-        return delete_post(domain, token, args.post_id, force=args.force)
+        return delete_post(domain, token, args.post_id)
     if args.command == "archive-post":
-        return archive_post(domain, token, args.post_id, force=args.force)
+        return archive_post(domain, token, args.post_id)
     if args.command == "unarchive-post":
-        return unarchive_post(domain, token, args.post_id, force=args.force)
+        return unarchive_post(domain, token, args.post_id)
     if args.command == "patch-post-body":
         return patch_post_body(
             domain,
@@ -631,7 +589,6 @@ def dispatch(args: argparse.Namespace, domain: str, token: str) -> object:
             args.content,
             notice=args.notice,
             include_body=args.include_body,
-            force=args.force,
         )
     if args.command == "get-comments":
         return get_comments(

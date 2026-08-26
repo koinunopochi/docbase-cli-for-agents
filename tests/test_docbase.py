@@ -67,35 +67,23 @@ class BuildRequestTest(unittest.TestCase):
 
 
 class CreatePostPolicyTest(unittest.TestCase):
-    def test_rejects_default_draft_false(self) -> None:
-        with self.assertRaises(MODULE.DocBaseError):
-            MODULE.create_post("d", "t", "title", "body")
-
-    def test_rejects_draft_true_without_private_scope(self) -> None:
-        with self.assertRaises(MODULE.DocBaseError):
-            MODULE.create_post("d", "t", "title", "body", draft=True, scope="everyone")
-
-    def test_rejects_private_scope_without_draft(self) -> None:
-        with self.assertRaises(MODULE.DocBaseError):
-            MODULE.create_post("d", "t", "title", "body", draft=False, scope="private")
-
     @mock.patch.object(MODULE, "docbase_request")
-    def test_allows_draft_true_and_scope_private(self, mock_request: mock.Mock) -> None:
+    def test_always_sends_private_draft(self, mock_request: mock.Mock) -> None:
         mock_request.return_value = {"id": 1}
-        MODULE.create_post("d", "t", "title", "body", draft=True, scope="private")
-        mock_request.assert_called_once()
-
-    @mock.patch.object(MODULE, "docbase_request")
-    def test_allow_public_bypasses_policy(self, mock_request: mock.Mock) -> None:
-        mock_request.return_value = {"id": 1}
-        MODULE.create_post("d", "t", "title", "body", draft=False, scope="everyone", allow_public=True)
-        mock_request.assert_called_once()
+        MODULE.create_post("d", "t", "title", "body")
+        mock_request.assert_called_once_with(
+            "d",
+            "t",
+            "POST",
+            "/posts",
+            body={"title": "title", "body": "body", "tags": [], "draft": True, "scope": "private"},
+        )
 
     @mock.patch.object(MODULE, "docbase_request")
     def test_rejects_h1_heading_in_body(self, mock_request: mock.Mock) -> None:
         with self.assertRaises(MODULE.DocBaseError):
             MODULE.create_post(
-                "d", "t", "title", "# same as title\nbody", draft=True, scope="private"
+                "d", "t", "title", "# same as title\nbody"
             )
         mock_request.assert_not_called()
 
@@ -150,9 +138,9 @@ class FindH1HeadingLineTest(unittest.TestCase):
 
 
 class UpdatePostOwnerCheckTest(unittest.TestCase):
-    def test_rejects_empty_update_even_with_force(self) -> None:
-        with self.assertRaises(MODULE.DocBaseError):
-            MODULE.update_post("d", "t", 1, force=True)
+    def test_rejects_empty_update(self) -> None:
+        with mock.patch.object(MODULE, "_check_post_owner"), self.assertRaises(MODULE.DocBaseError):
+            MODULE.update_post("d", "t", 1)
 
     @mock.patch.object(MODULE, "docbase_request")
     def test_checks_owner_before_patch_and_blocks_mismatch(self, mock_request: mock.Mock) -> None:
@@ -185,46 +173,42 @@ class UpdatePostOwnerCheckTest(unittest.TestCase):
         result = MODULE.update_post("d", "t", 1, title="new title")
         self.assertEqual(result, {"id": 1, "title": "new title"})
 
-    @mock.patch.object(MODULE, "docbase_request")
-    def test_force_skips_owner_check(self, mock_request: mock.Mock) -> None:
-        mock_request.return_value = {"id": 1, "title": "new title"}
-        MODULE.update_post("d", "t", 1, title="new title", force=True)
-        # Only the PATCH call happened — no /profile or /posts GET
-        mock_request.assert_called_once()
-        self.assertEqual(mock_request.call_args.args[2], "PATCH")
-
 
 class UpdatePostTest(unittest.TestCase):
     @mock.patch.object(MODULE, "docbase_request")
     def test_only_includes_provided_fields(self, mock_request: mock.Mock) -> None:
         mock_request.return_value = {"id": 1}
-        MODULE.update_post("d", "t", 1, title="new title", force=True)
+        with mock.patch.object(MODULE, "_check_post_owner"):
+            MODULE.update_post("d", "t", 1, title="new title")
         _, kwargs = mock_request.call_args
         self.assertEqual(kwargs["body"], {"title": "new title"})
 
     @mock.patch.object(MODULE, "docbase_request")
     def test_draft_false_is_sent_explicitly(self, mock_request: mock.Mock) -> None:
         mock_request.return_value = {"id": 1}
-        MODULE.update_post("d", "t", 1, draft=False, force=True)
+        with mock.patch.object(MODULE, "_check_post_owner"):
+            MODULE.update_post("d", "t", 1, draft=False)
         _, kwargs = mock_request.call_args
         self.assertEqual(kwargs["body"], {"draft": False})
 
     @mock.patch.object(MODULE, "docbase_request")
     def test_body_omitted_skips_h1_check(self, mock_request: mock.Mock) -> None:
         mock_request.return_value = {"id": 1}
-        MODULE.update_post("d", "t", 1, title="new title", force=True)
+        with mock.patch.object(MODULE, "_check_post_owner"):
+            MODULE.update_post("d", "t", 1, title="new title")
         mock_request.assert_called_once()
 
     @mock.patch.object(MODULE, "docbase_request")
-    def test_rejects_h1_heading_in_body_even_with_force(self, mock_request: mock.Mock) -> None:
-        with self.assertRaises(MODULE.DocBaseError):
-            MODULE.update_post("d", "t", 1, body="# same as title", force=True)
+    def test_rejects_h1_heading_in_body(self, mock_request: mock.Mock) -> None:
+        with self.assertRaises(MODULE.DocBaseError), mock.patch.object(MODULE, "_check_post_owner"):
+            MODULE.update_post("d", "t", 1, body="# same as title")
         mock_request.assert_not_called()
 
     @mock.patch.object(MODULE, "docbase_request")
     def test_explicit_empty_string_body_is_not_treated_as_omitted(self, mock_request: mock.Mock) -> None:
         mock_request.return_value = {"id": 1}
-        MODULE.update_post("d", "t", 1, body="", force=True)
+        with mock.patch.object(MODULE, "_check_post_owner"):
+            MODULE.update_post("d", "t", 1, body="")
         _, kwargs = mock_request.call_args
         self.assertEqual(kwargs["body"], {"body": ""})
 
@@ -245,12 +229,6 @@ class DeletePostOwnerCheckTest(unittest.TestCase):
         delete_calls = [c for c in mock_request.call_args_list if c.args[2] == "DELETE"]
         self.assertEqual(delete_calls, [])
 
-    @mock.patch.object(MODULE, "docbase_request")
-    def test_force_skips_owner_check(self, mock_request: mock.Mock) -> None:
-        mock_request.return_value = {}
-        MODULE.delete_post("d", "t", 1, force=True)
-        mock_request.assert_called_once_with("d", "t", "DELETE", "/posts/1")
-
 
 class ArchivePostOwnerCheckTest(unittest.TestCase):
     @mock.patch.object(MODULE, "docbase_request")
@@ -267,12 +245,6 @@ class ArchivePostOwnerCheckTest(unittest.TestCase):
             MODULE.archive_post("d", "t", 1)
         with self.assertRaises(MODULE.DocBaseError):
             MODULE.unarchive_post("d", "t", 1)
-
-    @mock.patch.object(MODULE, "docbase_request")
-    def test_force_skips_owner_check(self, mock_request: mock.Mock) -> None:
-        mock_request.return_value = {}
-        MODULE.archive_post("d", "t", 1, force=True)
-        mock_request.assert_called_once_with("d", "t", "PUT", "/posts/1/archive")
 
 
 class PatchPostBodyTest(unittest.TestCase):
@@ -292,7 +264,8 @@ class PatchPostBodyTest(unittest.TestCase):
     @mock.patch.object(MODULE, "docbase_request")
     def test_builds_single_operation_payload(self, mock_request: mock.Mock) -> None:
         mock_request.return_value = {"id": 1}
-        MODULE.patch_post_body("d", "t", 1, 3, 5, "old text", "new text", force=True)
+        with mock.patch.object(MODULE, "_check_post_owner"):
+            MODULE.patch_post_body("d", "t", 1, 3, 5, "old text", "new text")
         mock_request.assert_called_once_with(
             "d",
             "t",
@@ -307,8 +280,8 @@ class PatchPostBodyTest(unittest.TestCase):
 
     @mock.patch.object(MODULE, "docbase_request")
     def test_rejects_h1_heading_in_content(self, mock_request: mock.Mock) -> None:
-        with self.assertRaises(MODULE.DocBaseError):
-            MODULE.patch_post_body("d", "t", 1, 1, 2, "old", "# same as title", force=True)
+        with self.assertRaises(MODULE.DocBaseError), mock.patch.object(MODULE, "_check_post_owner"):
+            MODULE.patch_post_body("d", "t", 1, 1, 2, "old", "# same as title")
         mock_request.assert_not_called()
 
     @mock.patch.object(MODULE, "docbase_request")
@@ -316,8 +289,8 @@ class PatchPostBodyTest(unittest.TestCase):
         # --start/--end describe positions in the whole post; the H1 check only
         # sees the replacement fragment, so the error must not claim to point
         # at a post-wide line number.
-        with self.assertRaises(MODULE.DocBaseError) as ctx:
-            MODULE.patch_post_body("d", "t", 1, 50, 52, "old", "line one\n# heading", force=True)
+        with self.assertRaises(MODULE.DocBaseError) as ctx, mock.patch.object(MODULE, "_check_post_owner"):
+            MODULE.patch_post_body("d", "t", 1, 50, 52, "old", "line one\n# heading")
         message = str(ctx.exception)
         self.assertIn("2 行目", message)
         self.assertNotIn("52 行目", message)
@@ -454,23 +427,14 @@ class DispatchTest(unittest.TestCase):
         self.assertEqual(result, {"posts": []})
 
     @mock.patch.object(MODULE, "create_post")
-    def test_create_post_dispatch_passes_tags_and_draft(self, mock_create: mock.Mock) -> None:
+    def test_create_post_dispatch_passes_tags(self, mock_create: mock.Mock) -> None:
         args = MODULE.build_parser().parse_args(
-            ["create-post", "--title", "t", "--body", "b", "--tag", "a", "--tag", "b", "--draft"]
+            ["create-post", "--title", "t", "--body", "b", "--tag", "a", "--tag", "b"]
         )
         MODULE.dispatch(args, "d", "tok")
         mock_create.assert_called_once_with(
-            "d", "tok", "t", "b", tags=["a", "b"], draft=True, scope=None, allow_public=False
+            "d", "tok", "t", "b", tags=["a", "b"]
         )
-
-    @mock.patch.object(MODULE, "create_post")
-    def test_create_post_dispatch_passes_allow_public(self, mock_create: mock.Mock) -> None:
-        args = MODULE.build_parser().parse_args(
-            ["create-post", "--title", "t", "--body", "b", "--allow-public"]
-        )
-        MODULE.dispatch(args, "d", "tok")
-        _, kwargs = mock_create.call_args
-        self.assertEqual(kwargs["allow_public"], True)
 
     @mock.patch.object(MODULE, "update_post")
     def test_update_post_dispatch_publish_sets_draft_false(self, mock_update: mock.Mock) -> None:
@@ -478,14 +442,6 @@ class DispatchTest(unittest.TestCase):
         MODULE.dispatch(args, "d", "tok")
         _, kwargs = mock_update.call_args
         self.assertEqual(kwargs["draft"], False)
-        self.assertEqual(kwargs["force"], False)
-
-    @mock.patch.object(MODULE, "update_post")
-    def test_update_post_dispatch_passes_force(self, mock_update: mock.Mock) -> None:
-        args = MODULE.build_parser().parse_args(["update-post", "--post-id", "5", "--force"])
-        MODULE.dispatch(args, "d", "tok")
-        _, kwargs = mock_update.call_args
-        self.assertEqual(kwargs["force"], True)
 
     @mock.patch.object(MODULE, "get_profile")
     def test_profile_dispatch(self, mock_profile: mock.Mock) -> None:
@@ -495,23 +451,17 @@ class DispatchTest(unittest.TestCase):
         mock_profile.assert_called_once_with("d", "t")
         self.assertEqual(result, {"name": "x"})
 
-    @mock.patch.object(MODULE, "delete_post")
-    def test_delete_post_dispatch_passes_force(self, mock_delete: mock.Mock) -> None:
-        args = MODULE.build_parser().parse_args(["delete-post", "--post-id", "5", "--force"])
-        MODULE.dispatch(args, "d", "tok")
-        mock_delete.assert_called_once_with("d", "tok", 5, force=True)
-
     @mock.patch.object(MODULE, "archive_post")
     def test_archive_post_dispatch(self, mock_archive: mock.Mock) -> None:
         args = MODULE.build_parser().parse_args(["archive-post", "--post-id", "5"])
         MODULE.dispatch(args, "d", "tok")
-        mock_archive.assert_called_once_with("d", "tok", 5, force=False)
+        mock_archive.assert_called_once_with("d", "tok", 5)
 
     @mock.patch.object(MODULE, "unarchive_post")
     def test_unarchive_post_dispatch(self, mock_unarchive: mock.Mock) -> None:
         args = MODULE.build_parser().parse_args(["unarchive-post", "--post-id", "5"])
         MODULE.dispatch(args, "d", "tok")
-        mock_unarchive.assert_called_once_with("d", "tok", 5, force=False)
+        mock_unarchive.assert_called_once_with("d", "tok", 5)
 
     @mock.patch.object(MODULE, "patch_post_body")
     def test_patch_post_body_dispatch(self, mock_patch: mock.Mock) -> None:
@@ -529,7 +479,7 @@ class DispatchTest(unittest.TestCase):
         )
         MODULE.dispatch(args, "d", "tok")
         mock_patch.assert_called_once_with(
-            "d", "tok", 5, 1, 2, "old", "new", notice=False, include_body=True, force=False
+            "d", "tok", 5, 1, 2, "old", "new", notice=False, include_body=True
         )
 
     @mock.patch.object(MODULE, "get_comments")
@@ -581,6 +531,38 @@ class DispatchTest(unittest.TestCase):
         )
         MODULE.dispatch(args, "d", "tok")
         mock_upload.assert_called_once_with("d", "tok", ["clip.mp4", "clip.mov"])
+
+
+class SafetySurfaceTest(unittest.TestCase):
+    def assert_parser_rejects(self, args: list[str]) -> None:
+        with mock.patch("sys.stderr"), self.assertRaises(SystemExit) as ctx:
+            MODULE.build_parser().parse_args(args)
+        self.assertEqual(ctx.exception.code, 2)
+
+    def test_create_post_has_no_publication_override_flags(self) -> None:
+        base = ["create-post", "--title", "t", "--body", "b"]
+        for flag in (["--draft"], ["--scope", "private"], ["--allow-public"]):
+            with self.subTest(flag=flag):
+                self.assert_parser_rejects(base + flag)
+
+    def test_post_mutations_have_no_owner_override_flag(self) -> None:
+        commands = [
+            ["update-post", "--post-id", "1", "--title", "t"],
+            ["delete-post", "--post-id", "1"],
+            ["archive-post", "--post-id", "1"],
+            ["unarchive-post", "--post-id", "1"],
+            [
+                "patch-post-body",
+                "--post-id", "1",
+                "--start", "1",
+                "--end", "1",
+                "--old-content", "old",
+                "--content", "new",
+            ],
+        ]
+        for command in commands:
+            with self.subTest(command=command[0]):
+                self.assert_parser_rejects(command + ["--force"])
 
 
 if __name__ == "__main__":
