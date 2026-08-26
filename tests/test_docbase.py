@@ -49,10 +49,17 @@ class BuildRequestTest(unittest.TestCase):
 
     def test_create_post_request_has_json_body(self) -> None:
         req = MODULE.build_request(
-            "myteam", "tok", "POST", "/posts", body={"title": "t", "body": "b", "tags": [], "draft": False}
+            "myteam",
+            "tok",
+            "POST",
+            "/posts",
+            body={"title": "t", "body": "b", "tags": [], "draft": True, "scope": "private"},
         )
         self.assertEqual(req.get_method(), "POST")
-        self.assertEqual(json.loads(req.data.decode("utf-8")), {"title": "t", "body": "b", "tags": [], "draft": False})
+        self.assertEqual(
+            json.loads(req.data.decode("utf-8")),
+            {"title": "t", "body": "b", "tags": [], "draft": True, "scope": "private"},
+        )
         self.assertEqual(req.get_header("Content-type"), "application/json")
 
     def test_upload_attachment_request_accepts_array_body(self) -> None:
