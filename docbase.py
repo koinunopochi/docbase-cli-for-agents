@@ -129,34 +129,45 @@ _CODE_FENCE_LINE = re.compile(r"^(`{3,}|~{3,})")
 
 
 def _find_h1_heading_line(body: str) -> int | None:
-    """本文中で最初に見つかった ATX H1 見出し（行頭の `# ` または `#` 単独）の行番号（1始まり）を返す。
+    """本文中で最初に見つかった ATX H1 見出し（前後の空白を除いた行が `# ` で始まる、または `#` 単独）の行番号（1始まり）を返す。
 
     ``` / ~~~ のコードフェンスで囲まれた範囲内の `#` はコード（コメント等）であり
-    見出しではないため対象外にする。Setext 形式（下線付き）の見出しは対象外。
+    見出しではないため対象外にする。CommonMark と同様、閉じフェンスは開始フェンスと
+    同じ文字（` か ~）かつ同じ長さ以上でなければ閉じたとみなさない（異なる文字種・
+    短い閉じ風の行を挟むと検知漏れになるのを防ぐ）。Setext 形式（下線付き）の見出しは対象外。
     """
-    in_fence = False
+    fence_char: str | None = None
+    fence_len = 0
     for lineno, line in enumerate(body.splitlines(), start=1):
         stripped = line.strip()
-        if _CODE_FENCE_LINE.match(stripped):
-            in_fence = not in_fence
+        fence_match = _CODE_FENCE_LINE.match(stripped)
+        if fence_match:
+            marker = fence_match.group(1)
+            if fence_char is None:
+                fence_char, fence_len = marker[0], len(marker)
+            elif marker[0] == fence_char and len(marker) >= fence_len:
+                fence_char, fence_len = None, 0
             continue
-        if in_fence:
+        if fence_char is not None:
             continue
         if _H1_HEADING_LINE.match(stripped):
             return lineno
     return None
 
 
-def _check_no_h1_heading(body: str) -> None:
-    """本文の title は --title で完結させ、本文の見出しは H2 以降のみを許可する。
+def _check_no_h1_heading(text: str, *, field_label: str = "本文") -> None:
+    """title は --title で完結させ、本文の見出しは H2 以降のみを許可する。
 
     DocBase の title 要素と本文の H1 が同じ内容で重複して表示される事故を防ぐため。
+    `field_label` はエラーメッセージの対象呼称で、`patch-post-body` のように渡す
+    テキストが投稿本文の一部（置換対象の断片）でしかない呼び出し元は、行番号が
+    投稿全体ではなく渡したテキスト内での相対位置であることが伝わる文言を渡す。
     """
-    lineno = _find_h1_heading_line(body)
+    lineno = _find_h1_heading_line(text)
     if lineno is not None:
         raise DocBaseError(
-            f"本文の {lineno} 行目に H1 見出し（`# `）があります。"
-            "title と重複するため、本文の見出しは `##` 以降にしてください。"
+            f"{field_label}の {lineno} 行目に H1 見出し（`# `）があります。"
+            "title と重複するため、見出しは `##` 以降にしてください。"
             "title は --title で別途指定してください。"
         )
 
@@ -273,7 +284,7 @@ def patch_post_body(
 ) -> object:
     if not force:
         _check_post_owner(domain, token, post_id)
-    _check_no_h1_heading(content)
+    _check_no_h1_heading(content, field_label="置換後の content（--start/--end の行番号ではなく content 内の相対行）")
     payload = {
         "operations": [
             {"start": start, "end": end, "old_content": old_content, "content": content}

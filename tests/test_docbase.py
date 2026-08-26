@@ -128,6 +128,26 @@ class FindH1HeadingLineTest(unittest.TestCase):
         body = "~~~\n# comment\n~~~\nbody"
         self.assertIsNone(MODULE._find_h1_heading_line(body))
 
+    def test_empty_body_returns_none(self) -> None:
+        self.assertIsNone(MODULE._find_h1_heading_line(""))
+
+    def test_blank_lines_only_returns_none(self) -> None:
+        self.assertIsNone(MODULE._find_h1_heading_line("\n\n\n"))
+
+    def test_mismatched_fence_length_does_not_close_early(self) -> None:
+        # A shorter same-character fence line inside a longer fence does not
+        # close it (CommonMark requires the closing fence to be at least as
+        # long as the opening one), so the heading after the real close is
+        # still flagged.
+        body = "````\n```\n````\n# real heading"
+        self.assertEqual(MODULE._find_h1_heading_line(body), 4)
+
+    def test_mismatched_fence_character_does_not_close(self) -> None:
+        # ~~~ cannot close a ``` fence (different character), so everything
+        # after it, including a genuine heading, stays inside the fence.
+        body = "```\n~~~\n# heading\n```"
+        self.assertIsNone(MODULE._find_h1_heading_line(body))
+
 
 class UpdatePostOwnerCheckTest(unittest.TestCase):
     def test_rejects_empty_update_even_with_force(self) -> None:
@@ -200,6 +220,13 @@ class UpdatePostTest(unittest.TestCase):
         with self.assertRaises(MODULE.DocBaseError):
             MODULE.update_post("d", "t", 1, body="# same as title", force=True)
         mock_request.assert_not_called()
+
+    @mock.patch.object(MODULE, "docbase_request")
+    def test_explicit_empty_string_body_is_not_treated_as_omitted(self, mock_request: mock.Mock) -> None:
+        mock_request.return_value = {"id": 1}
+        MODULE.update_post("d", "t", 1, body="", force=True)
+        _, kwargs = mock_request.call_args
+        self.assertEqual(kwargs["body"], {"body": ""})
 
 
 class DeletePostOwnerCheckTest(unittest.TestCase):
@@ -282,6 +309,18 @@ class PatchPostBodyTest(unittest.TestCase):
     def test_rejects_h1_heading_in_content(self, mock_request: mock.Mock) -> None:
         with self.assertRaises(MODULE.DocBaseError):
             MODULE.patch_post_body("d", "t", 1, 1, 2, "old", "# same as title", force=True)
+        mock_request.assert_not_called()
+
+    @mock.patch.object(MODULE, "docbase_request")
+    def test_h1_error_line_number_is_relative_to_content_not_post(self, mock_request: mock.Mock) -> None:
+        # --start/--end describe positions in the whole post; the H1 check only
+        # sees the replacement fragment, so the error must not claim to point
+        # at a post-wide line number.
+        with self.assertRaises(MODULE.DocBaseError) as ctx:
+            MODULE.patch_post_body("d", "t", 1, 50, 52, "old", "line one\n# heading", force=True)
+        message = str(ctx.exception)
+        self.assertIn("2 行目", message)
+        self.assertNotIn("52 行目", message)
         mock_request.assert_not_called()
 
 
