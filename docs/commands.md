@@ -25,9 +25,9 @@ Fetch one post by ID.
 
 ### `create-post`
 
-Create a post. The safe default requires `--draft --scope private`; use
-`--allow-public` only when the caller has explicitly authorized a different
-publication state. Repeat `--tag` to add multiple tags.
+Create a private draft post. The publication state is fixed by the CLI;
+there are no options for creating a post with another state. Repeat `--tag` to
+add multiple tags.
 
 `--body` is rejected if it contains an ATX H1 heading (a line starting with
 `# `, or a line that is just `#`) outside a fenced (``` / ~~~) code block.
@@ -41,19 +41,17 @@ See [safety.md](./safety.md#body-content) for details.
 ./bin/docbase create-post \
   --title "Draft title" \
   --body "Markdown body" \
-  --tag example \
-  --draft \
-  --scope private
+  --tag example
 ```
 
 ### `update-post`
 
 Update one or more of title, body, tags, draft state, or scope. The CLI checks
-post ownership unless `--force` is supplied.
+post ownership before every update and cannot update a post created by another
+user.
 
 When `--body` is supplied, it is subject to the same H1 rejection as
-`create-post`. This check runs even with `--force`, since it is unrelated to
-the ownership check.
+`create-post`. The ownership check cannot be bypassed.
 
 ```sh
 ./bin/docbase update-post --post-id <post-id> --title "Revised title"
@@ -89,7 +87,7 @@ Restore an archived post after the owner check.
 
 Replace a line range in a post body. `--start` and `--end` are 1-based. The
 provided `--old-content` is sent with the operation so the caller can describe
-the expected current text. Ownership is checked unless `--force` is supplied.
+the expected current text. Post ownership is checked before the operation.
 
 ```sh
 ./bin/docbase patch-post-body \

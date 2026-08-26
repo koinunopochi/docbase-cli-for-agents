@@ -43,12 +43,12 @@ steps.
 
 ## Safety defaults
 
-- `create-post` requires `--draft --scope private` unless the caller explicitly
-  supplies `--allow-public`.
+- `create-post` always creates a private draft. The command has no option to
+  create a post with another publication state.
 - `update-post`, `delete-post`, `archive-post`, `unarchive-post`, and
-  `patch-post-body` verify that the authenticated user created the post.
-- `--force` bypasses that owner check and should only be used after the caller
-  has explicitly confirmed the target.
+  `patch-post-body` always verify that the authenticated user created the post.
+  A post created by another user cannot be updated, deleted, archived, or
+  unarchived through this CLI.
 - `create-post`, `update-post`, and `patch-post-body` reject an H1 heading
   (`# `) in the body, since DocBase already renders the title as an H1.
 - Attachment downloads write only to the path supplied by the caller and return

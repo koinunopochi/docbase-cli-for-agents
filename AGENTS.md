@@ -30,9 +30,10 @@ when adding coverage.
 
 - Keep `DOCBASE_API_TOKEN` in the environment; never put it in arguments,
   source, fixtures, logs, or documentation.
-- Preserve the default that new posts are private drafts.
-- Preserve the owner check on post mutations. `--allow-public` and `--force`
-  are explicit safety-policy overrides and require an intentional caller.
+- Preserve the rule that new posts are always private drafts. Do not add a
+  publication-state override to `create-post`.
+- Preserve the owner check on post mutations. The CLI must not provide an
+  override that permits operating on a post created by another user.
 - Do not add organization-specific URLs, paths, names, or operating
   instructions to this standalone repository.
 
