@@ -21,6 +21,7 @@ import argparse
 import base64
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.parse
@@ -123,6 +124,54 @@ def get_post(domain: str, token: str, post_id: int) -> object:
     return docbase_request(domain, token, "GET", f"/posts/{int(post_id)}")
 
 
+_H1_HEADING_LINE = re.compile(r"^#(?!#)(?:\s|$)")
+_CODE_FENCE_LINE = re.compile(r"^(`{3,}|~{3,})")
+
+
+def _find_h1_heading_line(body: str) -> int | None:
+    """本文中で最初に見つかった ATX H1 見出し（前後の空白を除いた行が `# ` で始まる、または `#` 単独）の行番号（1始まり）を返す。
+
+    ``` / ~~~ のコードフェンスで囲まれた範囲内の `#` はコード（コメント等）であり
+    見出しではないため対象外にする。CommonMark と同様、閉じフェンスは開始フェンスと
+    同じ文字（` か ~）かつ同じ長さ以上でなければ閉じたとみなさない（異なる文字種・
+    短い閉じ風の行を挟むと検知漏れになるのを防ぐ）。Setext 形式（下線付き）の見出しは対象外。
+    """
+    fence_char: str | None = None
+    fence_len = 0
+    for lineno, line in enumerate(body.splitlines(), start=1):
+        stripped = line.strip()
+        fence_match = _CODE_FENCE_LINE.match(stripped)
+        if fence_match:
+            marker = fence_match.group(1)
+            if fence_char is None:
+                fence_char, fence_len = marker[0], len(marker)
+            elif marker[0] == fence_char and len(marker) >= fence_len:
+                fence_char, fence_len = None, 0
+            continue
+        if fence_char is not None:
+            continue
+        if _H1_HEADING_LINE.match(stripped):
+            return lineno
+    return None
+
+
+def _check_no_h1_heading(text: str, *, field_label: str = "本文") -> None:
+    """title は --title で完結させ、本文の見出しは H2 以降のみを許可する。
+
+    DocBase の title 要素と本文の H1 が同じ内容で重複して表示される事故を防ぐため。
+    `field_label` はエラーメッセージの対象呼称で、`patch-post-body` のように渡す
+    テキストが投稿本文の一部（置換対象の断片）でしかない呼び出し元は、行番号が
+    投稿全体ではなく渡したテキスト内での相対位置であることが伝わる文言を渡す。
+    """
+    lineno = _find_h1_heading_line(text)
+    if lineno is not None:
+        raise DocBaseError(
+            f"{field_label}の {lineno} 行目に H1 見出し（`# `）があります。"
+            "title と重複するため、見出しは `##` 以降にしてください。"
+            "title は --title で別途指定してください。"
+        )
+
+
 def create_post(
     domain: str,
     token: str,
@@ -138,6 +187,7 @@ def create_post(
             "新規投稿は --draft --scope private が既定です（誤って公開範囲を広げる事故を防ぐため）。"
             "公開したい場合は --allow-public を明示してください。"
         )
+    _check_no_h1_heading(body)
     payload: dict[str, object] = {"title": title, "body": body, "tags": tags or [], "draft": draft}
     if scope is not None:
         payload["scope"] = scope
@@ -157,6 +207,8 @@ def update_post(
 ) -> object:
     if not force:
         _check_post_owner(domain, token, post_id)
+    if body is not None:
+        _check_no_h1_heading(body)
 
     payload: dict[str, object] = {}
     if title is not None:
@@ -232,6 +284,7 @@ def patch_post_body(
 ) -> object:
     if not force:
         _check_post_owner(domain, token, post_id)
+    _check_no_h1_heading(content, field_label="置換後の content（--start/--end の行番号ではなく content 内の相対行）")
     payload = {
         "operations": [
             {"start": start, "end": end, "old_content": old_content, "content": content}
@@ -390,7 +443,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_create = command_parser(sub, "create-post", help_text="投稿を作成する")
     p_create.add_argument("--title", required=True, help="投稿タイトル")
-    p_create.add_argument("--body", required=True, help="投稿本文（Markdown）")
+    p_create.add_argument(
+        "--body", required=True, help="投稿本文（Markdown）。H1 見出し（`# `）は title と重複するため拒否される"
+    )
     p_create.add_argument("--tag", dest="tags", action="append", default=[], help="付与するタグ名。複数指定可")
     p_create.add_argument("--draft", action="store_true", default=False, help="下書きとして作成する（--allow-public 無しでは実質必須）")
     p_create.add_argument("--scope", default=None, help="公開範囲（例: everyone / group / private）")
@@ -404,7 +459,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_update = command_parser(sub, "update-post", help_text="投稿を更新する")
     p_update.add_argument("--post-id", type=int, required=True, help="更新する投稿の ID")
     p_update.add_argument("--title", default=None, help="更新後のタイトル。省略時は変更しない")
-    p_update.add_argument("--body", default=None, help="更新後の本文。省略時は変更しない")
+    p_update.add_argument(
+        "--body",
+        default=None,
+        help="更新後の本文。省略時は変更しない。H1 見出し（`# `）は title と重複するため拒否される",
+    )
     p_update.add_argument(
         "--tag", dest="tags", action="append", default=None, help="更新後のタグ名。複数指定可。1回も指定しない場合は既存のタグを変更しない"
     )
@@ -444,7 +503,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_patch.add_argument("--start", type=int, required=True, help="置き換える開始行（1始まり）")
     p_patch.add_argument("--end", type=int, required=True, help="置き換える終了行（1始まり）")
     p_patch.add_argument("--old-content", required=True, help="指定範囲の現在の文字列")
-    p_patch.add_argument("--content", required=True, help="指定範囲を置き換える新しい文字列")
+    p_patch.add_argument(
+        "--content",
+        required=True,
+        help="指定範囲を置き換える新しい文字列。H1 見出し（`# `）は title と重複するため拒否される",
+    )
     p_patch.add_argument(
         "--no-notice", dest="notice", action="store_false", default=True, help="更新通知を送らない（既定は通知する）"
     )
