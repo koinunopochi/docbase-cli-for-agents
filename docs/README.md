@@ -9,6 +9,10 @@ Use the CLI help as the short, versioned entry point:
 
 The help output links to the detailed [command reference](commands.md).
 
+The CLI repository owns this contract. Consumers should invoke the CLI and
+read its help and responses; they should not copy command syntax, API details,
+or safety rules into a skill or hook.
+
 | Need | Read |
 | --- | --- |
 | Configure credentials | [Authentication](authentication.md) |

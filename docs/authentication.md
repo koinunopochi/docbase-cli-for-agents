@@ -23,5 +23,6 @@ Check only that configuration is available with:
 ```
 
 The command calls DocBase and returns the API response as JSON; it is not a
-local token validator. A missing variable exits with code 2. An API or network
-failure exits with code 1.
+local token validator. A missing variable exits with code 2 and produces a
+structured error on stderr. An API or network failure exits with code 1. The
+CLI never prompts for a token.
