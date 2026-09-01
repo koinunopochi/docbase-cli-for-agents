@@ -20,7 +20,7 @@ run the launcher; a local build is not required.
 sha256sum -c SHA256SUMS
 export DOCBASE_DOMAIN="your-team"
 export DOCBASE_API_TOKEN="..."
-./docbase-cli-for-agents_v0.0.1/bin/docbase --help
+./docbase-cli-for-agents_v0.1.2/bin/docbase --help
 ```
 
 On Windows, use the ZIP archive and run `bin\\docbase` from a shell that
@@ -35,8 +35,8 @@ annotated semantic-version tag:
 ```sh
 make test
 make lint
-git tag -a v0.0.2 -m "Release v0.0.2"
-git push origin v0.0.2
+git tag -a v0.1.2 -m "Release v0.1.2"
+git push origin v0.1.2
 ```
 
 Pushing a `v*` tag starts `.github/workflows/release.yml`. The workflow tests
