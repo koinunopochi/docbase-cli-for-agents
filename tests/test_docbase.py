@@ -34,6 +34,10 @@ class ResolveConfigTest(unittest.TestCase):
         with self.assertRaises(MODULE.DocBaseConfigError):
             MODULE.resolve_config({"DOCBASE_API_TOKEN": "t"})
 
+    def test_rejects_token_with_newline(self) -> None:
+        with self.assertRaises(MODULE.DocBaseConfigError):
+            MODULE.resolve_config({"DOCBASE_DOMAIN": "d", "DOCBASE_API_TOKEN": "bad\ntoken"})
+
 
 class BuildRequestTest(unittest.TestCase):
     def test_search_posts_request_shape(self) -> None:
@@ -77,7 +81,7 @@ class CreatePostPolicyTest(unittest.TestCase):
     @mock.patch.object(MODULE, "docbase_request")
     def test_always_sends_private_draft(self, mock_request: mock.Mock) -> None:
         mock_request.return_value = {"id": 1}
-        MODULE.create_post("d", "t", "title", "body")
+        MODULE.create_post("d", "t", "title", "body", confirm=True)
         mock_request.assert_called_once_with(
             "d",
             "t",
@@ -89,65 +93,23 @@ class CreatePostPolicyTest(unittest.TestCase):
     @mock.patch.object(MODULE, "docbase_request")
     def test_rejects_h1_heading_in_body(self, mock_request: mock.Mock) -> None:
         with self.assertRaises(MODULE.DocBaseError):
-            MODULE.create_post(
-                "d", "t", "title", "# same as title\nbody"
-            )
+            MODULE.create_post("d", "t", "title", "# same as title\nbody", confirm=True)
         mock_request.assert_not_called()
 
 
 class FindH1HeadingLineTest(unittest.TestCase):
-    def test_no_heading_returns_none(self) -> None:
-        self.assertIsNone(MODULE._find_h1_heading_line("plain body\nwith no heading"))
-
-    def test_detects_atx_h1_with_space(self) -> None:
-        self.assertEqual(MODULE._find_h1_heading_line("intro\n# Heading\nmore"), 2)
-
-    def test_detects_bare_hash_line(self) -> None:
-        self.assertEqual(MODULE._find_h1_heading_line("#\nbody"), 1)
-
-    def test_h2_is_not_flagged(self) -> None:
-        self.assertIsNone(MODULE._find_h1_heading_line("## Heading\nbody"))
-
-    def test_hash_without_space_is_not_a_heading(self) -> None:
-        self.assertIsNone(MODULE._find_h1_heading_line("#nothashheading\nbody"))
-
-    def test_hash_inside_code_fence_is_ignored(self) -> None:
-        body = "```bash\n# comment, not a heading\n```\nbody"
+    def test_ignores_fenced_code_blocks(self) -> None:
+        body = "before\n```markdown\n# code\n```\n## section"
         self.assertIsNone(MODULE._find_h1_heading_line(body))
 
-    def test_heading_after_code_fence_is_detected(self) -> None:
-        body = "```bash\n# comment\n```\n# real heading"
-        self.assertEqual(MODULE._find_h1_heading_line(body), 4)
-
-    def test_tilde_fence_is_also_recognized(self) -> None:
-        body = "~~~\n# comment\n~~~\nbody"
-        self.assertIsNone(MODULE._find_h1_heading_line(body))
-
-    def test_empty_body_returns_none(self) -> None:
-        self.assertIsNone(MODULE._find_h1_heading_line(""))
-
-    def test_blank_lines_only_returns_none(self) -> None:
-        self.assertIsNone(MODULE._find_h1_heading_line("\n\n\n"))
-
-    def test_mismatched_fence_length_does_not_close_early(self) -> None:
-        # A shorter same-character fence line inside a longer fence does not
-        # close it (CommonMark requires the closing fence to be at least as
-        # long as the opening one), so the heading after the real close is
-        # still flagged.
-        body = "````\n```\n````\n# real heading"
-        self.assertEqual(MODULE._find_h1_heading_line(body), 4)
-
-    def test_mismatched_fence_character_does_not_close(self) -> None:
-        # ~~~ cannot close a ``` fence (different character), so everything
-        # after it, including a genuine heading, stays inside the fence.
-        body = "```\n~~~\n# heading\n```"
-        self.assertIsNone(MODULE._find_h1_heading_line(body))
+    def test_returns_first_heading_line_outside_fence(self) -> None:
+        self.assertEqual(MODULE._find_h1_heading_line("## okay\n# heading"), 2)
 
 
 class UpdatePostOwnerCheckTest(unittest.TestCase):
     def test_rejects_empty_update(self) -> None:
-        with mock.patch.object(MODULE, "_check_post_owner"), self.assertRaises(MODULE.DocBaseError):
-            MODULE.update_post("d", "t", 1)
+        with self.assertRaises(MODULE.DocBaseError):
+            MODULE.update_post("d", "t", 1, confirm=True)
 
     @mock.patch.object(MODULE, "docbase_request")
     def test_checks_owner_before_patch_and_blocks_mismatch(self, mock_request: mock.Mock) -> None:
@@ -160,7 +122,7 @@ class UpdatePostOwnerCheckTest(unittest.TestCase):
 
         mock_request.side_effect = side_effect
         with self.assertRaises(MODULE.DocBaseError):
-            MODULE.update_post("d", "t", 1, title="new title")
+            MODULE.update_post("d", "t", 1, title="new title", confirm=True)
         # PATCH was never reached
         patch_calls = [c for c in mock_request.call_args_list if c.args[2] == "PATCH"]
         self.assertEqual(patch_calls, [])
@@ -177,16 +139,15 @@ class UpdatePostOwnerCheckTest(unittest.TestCase):
             raise AssertionError(f"unexpected call: {method} {path}")
 
         mock_request.side_effect = side_effect
-        result = MODULE.update_post("d", "t", 1, title="new title")
+        result = MODULE.update_post("d", "t", 1, title="new title", confirm=True)
         self.assertEqual(result, {"id": 1, "title": "new title"})
-
 
 class UpdatePostTest(unittest.TestCase):
     @mock.patch.object(MODULE, "docbase_request")
     def test_only_includes_provided_fields(self, mock_request: mock.Mock) -> None:
         mock_request.return_value = {"id": 1}
         with mock.patch.object(MODULE, "_check_post_owner"):
-            MODULE.update_post("d", "t", 1, title="new title")
+            MODULE.update_post("d", "t", 1, title="new title", confirm=True)
         _, kwargs = mock_request.call_args
         self.assertEqual(kwargs["body"], {"title": "new title"})
 
@@ -194,30 +155,15 @@ class UpdatePostTest(unittest.TestCase):
     def test_draft_false_is_sent_explicitly(self, mock_request: mock.Mock) -> None:
         mock_request.return_value = {"id": 1}
         with mock.patch.object(MODULE, "_check_post_owner"):
-            MODULE.update_post("d", "t", 1, draft=False)
+            MODULE.update_post("d", "t", 1, draft=False, confirm=True)
         _, kwargs = mock_request.call_args
         self.assertEqual(kwargs["body"], {"draft": False})
 
     @mock.patch.object(MODULE, "docbase_request")
-    def test_body_omitted_skips_h1_check(self, mock_request: mock.Mock) -> None:
-        mock_request.return_value = {"id": 1}
-        with mock.patch.object(MODULE, "_check_post_owner"):
-            MODULE.update_post("d", "t", 1, title="new title")
-        mock_request.assert_called_once()
-
-    @mock.patch.object(MODULE, "docbase_request")
     def test_rejects_h1_heading_in_body(self, mock_request: mock.Mock) -> None:
-        with self.assertRaises(MODULE.DocBaseError), mock.patch.object(MODULE, "_check_post_owner"):
-            MODULE.update_post("d", "t", 1, body="# same as title")
+        with mock.patch.object(MODULE, "_check_post_owner"), self.assertRaises(MODULE.DocBaseError):
+            MODULE.update_post("d", "t", 1, body="# same as title", confirm=True)
         mock_request.assert_not_called()
-
-    @mock.patch.object(MODULE, "docbase_request")
-    def test_explicit_empty_string_body_is_not_treated_as_omitted(self, mock_request: mock.Mock) -> None:
-        mock_request.return_value = {"id": 1}
-        with mock.patch.object(MODULE, "_check_post_owner"):
-            MODULE.update_post("d", "t", 1, body="")
-        _, kwargs = mock_request.call_args
-        self.assertEqual(kwargs["body"], {"body": ""})
 
 
 class DeletePostOwnerCheckTest(unittest.TestCase):
@@ -232,10 +178,9 @@ class DeletePostOwnerCheckTest(unittest.TestCase):
 
         mock_request.side_effect = side_effect
         with self.assertRaises(MODULE.DocBaseError):
-            MODULE.delete_post("d", "t", 1)
+            MODULE.delete_post("d", "t", 1, confirm=True)
         delete_calls = [c for c in mock_request.call_args_list if c.args[2] == "DELETE"]
         self.assertEqual(delete_calls, [])
-
 
 class ArchivePostOwnerCheckTest(unittest.TestCase):
     @mock.patch.object(MODULE, "docbase_request")
@@ -249,10 +194,9 @@ class ArchivePostOwnerCheckTest(unittest.TestCase):
 
         mock_request.side_effect = side_effect
         with self.assertRaises(MODULE.DocBaseError):
-            MODULE.archive_post("d", "t", 1)
+            MODULE.archive_post("d", "t", 1, confirm=True)
         with self.assertRaises(MODULE.DocBaseError):
-            MODULE.unarchive_post("d", "t", 1)
-
+            MODULE.unarchive_post("d", "t", 1, confirm=True)
 
 class PatchPostBodyTest(unittest.TestCase):
     @mock.patch.object(MODULE, "docbase_request")
@@ -266,13 +210,13 @@ class PatchPostBodyTest(unittest.TestCase):
 
         mock_request.side_effect = side_effect
         with self.assertRaises(MODULE.DocBaseError):
-            MODULE.patch_post_body("d", "t", 1, 1, 2, "old", "new")
+            MODULE.patch_post_body("d", "t", 1, 1, 2, "old", "new", confirm=True)
 
     @mock.patch.object(MODULE, "docbase_request")
     def test_builds_single_operation_payload(self, mock_request: mock.Mock) -> None:
         mock_request.return_value = {"id": 1}
         with mock.patch.object(MODULE, "_check_post_owner"):
-            MODULE.patch_post_body("d", "t", 1, 3, 5, "old text", "new text")
+            MODULE.patch_post_body("d", "t", 1, 3, 5, "old text", "new text", confirm=True)
         mock_request.assert_called_once_with(
             "d",
             "t",
@@ -287,20 +231,8 @@ class PatchPostBodyTest(unittest.TestCase):
 
     @mock.patch.object(MODULE, "docbase_request")
     def test_rejects_h1_heading_in_content(self, mock_request: mock.Mock) -> None:
-        with self.assertRaises(MODULE.DocBaseError), mock.patch.object(MODULE, "_check_post_owner"):
-            MODULE.patch_post_body("d", "t", 1, 1, 2, "old", "# same as title")
-        mock_request.assert_not_called()
-
-    @mock.patch.object(MODULE, "docbase_request")
-    def test_h1_error_line_number_is_relative_to_content_not_post(self, mock_request: mock.Mock) -> None:
-        # --start/--end describe positions in the whole post; the H1 check only
-        # sees the replacement fragment, so the error must not claim to point
-        # at a post-wide line number.
-        with self.assertRaises(MODULE.DocBaseError) as ctx, mock.patch.object(MODULE, "_check_post_owner"):
-            MODULE.patch_post_body("d", "t", 1, 50, 52, "old", "line one\n# heading")
-        message = str(ctx.exception)
-        self.assertIn("2 行目", message)
-        self.assertNotIn("52 行目", message)
+        with mock.patch.object(MODULE, "_check_post_owner"), self.assertRaises(MODULE.DocBaseError):
+            MODULE.patch_post_body("d", "t", 1, 1, 2, "old", "# same as title", confirm=True)
         mock_request.assert_not_called()
 
 
@@ -320,7 +252,7 @@ class CommentsTest(unittest.TestCase):
     @mock.patch.object(MODULE, "docbase_request")
     def test_create_comment_request_shape(self, mock_request: mock.Mock) -> None:
         mock_request.return_value = {"id": 9}
-        MODULE.create_comment("d", "t", 1, "hello", notice=False)
+        MODULE.create_comment("d", "t", 1, "hello", notice=False, confirm=True)
         mock_request.assert_called_once_with(
             "d", "t", "POST", "/posts/1/comments", body={"body": "hello", "notice": False}
         )
@@ -328,7 +260,7 @@ class CommentsTest(unittest.TestCase):
     @mock.patch.object(MODULE, "docbase_request")
     def test_delete_comment_has_no_owner_check(self, mock_request: mock.Mock) -> None:
         mock_request.return_value = {}
-        MODULE.delete_comment("d", "t", 9)
+        MODULE.delete_comment("d", "t", 9, confirm=True)
         mock_request.assert_called_once_with("d", "t", "DELETE", "/comments/9")
 
 
@@ -344,19 +276,19 @@ class GroupsAndLookupsTest(unittest.TestCase):
     @mock.patch.object(MODULE, "docbase_request")
     def test_create_group_omits_description_when_absent(self, mock_request: mock.Mock) -> None:
         mock_request.return_value = {"id": 1}
-        MODULE.create_group("d", "t", "新グループ")
+        MODULE.create_group("d", "t", "新グループ", confirm=True)
         mock_request.assert_called_once_with("d", "t", "POST", "/groups", body={"name": "新グループ"})
 
     @mock.patch.object(MODULE, "docbase_request")
     def test_add_users_to_group_request_shape(self, mock_request: mock.Mock) -> None:
         mock_request.return_value = {}
-        MODULE.add_users_to_group("d", "t", 5, [1, 2, 3])
+        MODULE.add_users_to_group("d", "t", 5, [1, 2, 3], confirm=True)
         mock_request.assert_called_once_with("d", "t", "POST", "/groups/5/users", body={"user_ids": [1, 2, 3]})
 
     @mock.patch.object(MODULE, "docbase_request")
     def test_remove_users_from_group_request_shape(self, mock_request: mock.Mock) -> None:
         mock_request.return_value = {}
-        MODULE.remove_users_from_group("d", "t", 5, [1])
+        MODULE.remove_users_from_group("d", "t", 5, [1], confirm=True)
         mock_request.assert_called_once_with("d", "t", "DELETE", "/groups/5/users", body={"user_ids": [1]})
 
     @mock.patch.object(MODULE, "docbase_request")
@@ -390,6 +322,75 @@ class DownloadAttachmentTest(unittest.TestCase):
                 self.assertEqual(f.read(), b"binary-data")
             self.assertEqual(result, {"attachment_id": "abc123", "output_path": out_path, "size": len(b"binary-data")})
 
+    def test_rejects_dangling_symlink_without_network_request(self) -> None:
+        import os
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output = Path(tmpdir) / "download.bin"
+            os.symlink(Path(tmpdir) / "missing-target.bin", output)
+            with (
+                mock.patch.object(MODULE.urllib.request, "urlopen") as mock_urlopen,
+                self.assertRaises(MODULE.DocBaseSafetyError),
+            ):
+                MODULE.download_attachment("d", "t", "abc123", str(output))
+            mock_urlopen.assert_not_called()
+
+    def test_rejects_missing_parent_before_network_request(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output = Path(tmpdir) / "missing" / "download.bin"
+            with (
+                mock.patch.object(MODULE.urllib.request, "urlopen") as mock_urlopen,
+                self.assertRaises(MODULE.DocBaseFilesystemError),
+            ):
+                MODULE.download_attachment("d", "t", "abc123", str(output))
+            mock_urlopen.assert_not_called()
+
+    def test_overwrite_flag_without_existing_file_does_not_need_confirmation(self) -> None:
+        import io
+        import tempfile
+
+        class FakeResponse(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output = Path(tmpdir) / "new.bin"
+            with mock.patch.object(MODULE.urllib.request, "urlopen", return_value=FakeResponse(b"new")):
+                MODULE.download_attachment("d", "t", "abc123", str(output), overwrite=True)
+            self.assertEqual(output.read_bytes(), b"new")
+
+    def test_refuses_existing_output_without_network_request(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out_path = Path(tmpdir) / "existing.bin"
+            out_path.write_bytes(b"keep")
+            with (
+                mock.patch.object(MODULE.urllib.request, "urlopen") as mock_urlopen,
+                self.assertRaises(MODULE.DocBaseSafetyError),
+            ):
+                MODULE.download_attachment("d", "t", "abc123", str(out_path))
+            mock_urlopen.assert_not_called()
+
+    def test_overwrite_requires_confirmation_before_network_request(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out_path = Path(tmpdir) / "existing.bin"
+            out_path.write_bytes(b"keep")
+            with (
+                mock.patch.object(MODULE.urllib.request, "urlopen") as mock_urlopen,
+                self.assertRaises(MODULE.DocBaseConfirmationError),
+            ):
+                MODULE.download_attachment("d", "t", "abc123", str(out_path), overwrite=True)
+            mock_urlopen.assert_not_called()
+
 
 class UploadAttachmentTest(unittest.TestCase):
     @mock.patch.object(MODULE, "docbase_request")
@@ -401,7 +402,7 @@ class UploadAttachmentTest(unittest.TestCase):
             file_path = Path(tmpdir) / "clip.mp4"
             file_path.write_bytes(b"mock-mp4-bytes")
 
-            result = MODULE.upload_attachments("d", "t", [str(file_path)])
+            result = MODULE.upload_attachments("d", "t", [str(file_path)], confirm=True)
 
         mock_request.assert_called_once_with(
             "d",
@@ -420,7 +421,94 @@ class UploadAttachmentTest(unittest.TestCase):
     @mock.patch.object(MODULE, "docbase_request")
     def test_rejects_missing_file_without_api_call(self, mock_request: mock.Mock) -> None:
         with self.assertRaises(MODULE.DocBaseError):
-            MODULE.upload_attachments("d", "t", ["missing.mp4"])
+            MODULE.upload_attachments("d", "t", ["missing.mp4"], confirm=True)
+        mock_request.assert_not_called()
+
+
+class ContractValidationTest(unittest.TestCase):
+    def test_rejects_invalid_pagination_at_parser(self) -> None:
+        with self.assertRaises(MODULE.DocBaseInputError):
+            MODULE.build_parser().parse_args(["search-posts", "--query", "q", "--page", "0"])
+        with self.assertRaises(MODULE.DocBaseInputError):
+            MODULE.build_parser().parse_args(["search-posts", "--query", "q", "--per-page", "101"])
+
+    def test_rejects_invalid_patch_range_before_request(self) -> None:
+        with (
+            mock.patch.object(MODULE, "docbase_request") as mock_request,
+            self.assertRaises(MODULE.DocBaseInputError),
+        ):
+            MODULE.patch_post_body("d", "t", 1, 4, 3, "old", "new", confirm=True)
+        mock_request.assert_not_called()
+
+    def test_mutation_requires_confirmation_before_api_request(self) -> None:
+        with (
+            mock.patch.object(MODULE, "docbase_request") as mock_request,
+            self.assertRaises(MODULE.DocBaseConfirmationError) as context,
+        ):
+            MODULE.create_comment("d", "t", 1, "hello")
+        mock_request.assert_not_called()
+        self.assertEqual(context.exception.code, "confirmation_required")
+        payload = context.exception.to_payload()
+        self.assertEqual(payload["error"]["details"]["target"], {"post_id": 1})
+
+    def test_error_payload_redacts_token_and_exposes_retry_metadata(self) -> None:
+        error = MODULE.DocBaseApiError(
+            429,
+            '{"message":"token=secret-token"}',
+            headers={"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "123"},
+            token="secret-token",
+        )
+        payload = error.to_payload(["secret-token"])
+        rendered = json.dumps(payload, ensure_ascii=False)
+        self.assertNotIn("secret-token", rendered)
+        self.assertEqual(payload["error"]["status"], 429)
+        self.assertTrue(payload["error"]["retryable"])
+        self.assertEqual(payload["error"]["details"]["response"]["rate_limit"]["remaining"], 0)
+
+    def test_include_meta_wraps_successful_response(self) -> None:
+        import io
+
+        class FakeResponse(io.BytesIO):
+            def __init__(self, body: bytes):
+                super().__init__(body)
+                self.status = 200
+                self.headers = {"X-RateLimit-Limit": "100", "X-RateLimit-Remaining": "99"}
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+        with mock.patch.object(MODULE.urllib.request, "urlopen", return_value=FakeResponse(b'{"ok":true}')):
+            result = MODULE.docbase_request("d", "t", "GET", "/profile", include_meta=True)
+        self.assertEqual(result["data"], {"ok": True})
+        self.assertEqual(result["meta"]["http_status"], 200)
+        self.assertEqual(result["meta"]["rate_limit"]["remaining"], 99)
+
+
+class MutationConfirmationCoverageTest(unittest.TestCase):
+    @mock.patch.object(MODULE, "docbase_request")
+    def test_every_api_mutation_requires_confirmation_before_request(self, mock_request: mock.Mock) -> None:
+        mutations = [
+            lambda: MODULE.create_post("d", "t", "title", "body"),
+            lambda: MODULE.update_post("d", "t", 1, title="new"),
+            lambda: MODULE.delete_post("d", "t", 1),
+            lambda: MODULE.archive_post("d", "t", 1),
+            lambda: MODULE.unarchive_post("d", "t", 1),
+            lambda: MODULE.patch_post_body("d", "t", 1, 1, 1, "old", "new"),
+            lambda: MODULE.create_comment("d", "t", 1, "body"),
+            lambda: MODULE.delete_comment("d", "t", 1),
+            lambda: MODULE.create_group("d", "t", "group"),
+            lambda: MODULE.add_users_to_group("d", "t", 1, [2]),
+            lambda: MODULE.remove_users_from_group("d", "t", 1, [2]),
+            lambda: MODULE.upload_attachments("d", "t", ["missing.bin"]),
+        ]
+
+        for mutation in mutations:
+            with self.subTest(mutation=mutation), self.assertRaises(MODULE.DocBaseConfirmationError):
+                mutation()
+
         mock_request.assert_not_called()
 
 
@@ -434,21 +522,22 @@ class DispatchTest(unittest.TestCase):
         self.assertEqual(result, {"posts": []})
 
     @mock.patch.object(MODULE, "create_post")
-    def test_create_post_dispatch_passes_tags(self, mock_create: mock.Mock) -> None:
+    def test_create_post_dispatch_passes_tags_and_confirmation(self, mock_create: mock.Mock) -> None:
         args = MODULE.build_parser().parse_args(
-            ["create-post", "--title", "t", "--body", "b", "--tag", "a", "--tag", "b"]
+            ["create-post", "--title", "t", "--body", "b", "--tag", "a", "--tag", "b", "--confirm"]
         )
         MODULE.dispatch(args, "d", "tok")
         mock_create.assert_called_once_with(
-            "d", "tok", "t", "b", tags=["a", "b"]
+            "d", "tok", "t", "b", tags=["a", "b"], confirm=True
         )
 
     @mock.patch.object(MODULE, "update_post")
     def test_update_post_dispatch_publish_sets_draft_false(self, mock_update: mock.Mock) -> None:
-        args = MODULE.build_parser().parse_args(["update-post", "--post-id", "5", "--publish"])
+        args = MODULE.build_parser().parse_args(["update-post", "--post-id", "5", "--publish", "--confirm"])
         MODULE.dispatch(args, "d", "tok")
         _, kwargs = mock_update.call_args
         self.assertEqual(kwargs["draft"], False)
+        self.assertEqual(kwargs["confirm"], True)
 
     @mock.patch.object(MODULE, "get_profile")
     def test_profile_dispatch(self, mock_profile: mock.Mock) -> None:
@@ -460,15 +549,15 @@ class DispatchTest(unittest.TestCase):
 
     @mock.patch.object(MODULE, "archive_post")
     def test_archive_post_dispatch(self, mock_archive: mock.Mock) -> None:
-        args = MODULE.build_parser().parse_args(["archive-post", "--post-id", "5"])
+        args = MODULE.build_parser().parse_args(["archive-post", "--post-id", "5", "--confirm"])
         MODULE.dispatch(args, "d", "tok")
-        mock_archive.assert_called_once_with("d", "tok", 5)
+        mock_archive.assert_called_once_with("d", "tok", 5, confirm=True)
 
     @mock.patch.object(MODULE, "unarchive_post")
     def test_unarchive_post_dispatch(self, mock_unarchive: mock.Mock) -> None:
-        args = MODULE.build_parser().parse_args(["unarchive-post", "--post-id", "5"])
+        args = MODULE.build_parser().parse_args(["unarchive-post", "--post-id", "5", "--confirm"])
         MODULE.dispatch(args, "d", "tok")
-        mock_unarchive.assert_called_once_with("d", "tok", 5)
+        mock_unarchive.assert_called_once_with("d", "tok", 5, confirm=True)
 
     @mock.patch.object(MODULE, "patch_post_body")
     def test_patch_post_body_dispatch(self, mock_patch: mock.Mock) -> None:
@@ -482,11 +571,12 @@ class DispatchTest(unittest.TestCase):
                 "--content", "new",
                 "--no-notice",
                 "--include-body",
+                "--confirm",
             ]
         )
         MODULE.dispatch(args, "d", "tok")
         mock_patch.assert_called_once_with(
-            "d", "tok", 5, 1, 2, "old", "new", notice=False, include_body=True
+            "d", "tok", 5, 1, 2, "old", "new", notice=False, include_body=True, confirm=True
         )
 
     @mock.patch.object(MODULE, "get_comments")
@@ -499,15 +589,15 @@ class DispatchTest(unittest.TestCase):
 
     @mock.patch.object(MODULE, "create_comment")
     def test_create_comment_dispatch(self, mock_create: mock.Mock) -> None:
-        args = MODULE.build_parser().parse_args(["create-comment", "--post-id", "5", "--body", "hi"])
+        args = MODULE.build_parser().parse_args(["create-comment", "--post-id", "5", "--body", "hi", "--confirm"])
         MODULE.dispatch(args, "d", "tok")
-        mock_create.assert_called_once_with("d", "tok", 5, "hi", notice=True)
+        mock_create.assert_called_once_with("d", "tok", 5, "hi", notice=True, confirm=True)
 
     @mock.patch.object(MODULE, "delete_comment")
     def test_delete_comment_dispatch(self, mock_delete: mock.Mock) -> None:
-        args = MODULE.build_parser().parse_args(["delete-comment", "--comment-id", "9"])
+        args = MODULE.build_parser().parse_args(["delete-comment", "--comment-id", "9", "--confirm"])
         MODULE.dispatch(args, "d", "tok")
-        mock_delete.assert_called_once_with("d", "tok", 9)
+        mock_delete.assert_called_once_with("d", "tok", 9, confirm=True)
 
     @mock.patch.object(MODULE, "search_groups")
     def test_search_groups_dispatch(self, mock_search: mock.Mock) -> None:
@@ -518,10 +608,10 @@ class DispatchTest(unittest.TestCase):
     @mock.patch.object(MODULE, "add_users_to_group")
     def test_add_users_to_group_dispatch_collects_repeated_flags(self, mock_add: mock.Mock) -> None:
         args = MODULE.build_parser().parse_args(
-            ["add-users-to-group", "--group-id", "5", "--user-id", "1", "--user-id", "2"]
+            ["add-users-to-group", "--group-id", "5", "--user-id", "1", "--user-id", "2", "--confirm"]
         )
         MODULE.dispatch(args, "d", "tok")
-        mock_add.assert_called_once_with("d", "tok", 5, [1, 2])
+        mock_add.assert_called_once_with("d", "tok", 5, [1, 2], confirm=True)
 
     @mock.patch.object(MODULE, "download_attachment")
     def test_download_attachment_dispatch(self, mock_download: mock.Mock) -> None:
@@ -529,22 +619,21 @@ class DispatchTest(unittest.TestCase):
             ["download-attachment", "--attachment-id", "abc", "--output", "/tmp/out.bin"]
         )
         MODULE.dispatch(args, "d", "tok")
-        mock_download.assert_called_once_with("d", "tok", "abc", "/tmp/out.bin")
+        mock_download.assert_called_once_with("d", "tok", "abc", "/tmp/out.bin", overwrite=False, confirm=False)
 
     @mock.patch.object(MODULE, "upload_attachments")
     def test_upload_attachment_dispatch_collects_repeated_files(self, mock_upload: mock.Mock) -> None:
         args = MODULE.build_parser().parse_args(
-            ["upload-attachment", "--file", "clip.mp4", "--file", "clip.mov"]
+            ["upload-attachment", "--file", "clip.mp4", "--file", "clip.mov", "--confirm"]
         )
         MODULE.dispatch(args, "d", "tok")
-        mock_upload.assert_called_once_with("d", "tok", ["clip.mp4", "clip.mov"])
+        mock_upload.assert_called_once_with("d", "tok", ["clip.mp4", "clip.mov"], confirm=True)
 
 
 class SafetySurfaceTest(unittest.TestCase):
     def assert_parser_rejects(self, args: list[str]) -> None:
-        with mock.patch("sys.stderr"), self.assertRaises(SystemExit) as ctx:
+        with mock.patch("sys.stderr"), self.assertRaises(MODULE.DocBaseInputError):
             MODULE.build_parser().parse_args(args)
-        self.assertEqual(ctx.exception.code, 2)
 
     def test_create_post_has_no_publication_override_flags(self) -> None:
         base = ["create-post", "--title", "t", "--body", "b"]

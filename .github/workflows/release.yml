@@ -26,7 +26,7 @@ jobs:
 
       - name: Test and lint
         run: |
-          uv run --python 3.12 tests/test_docbase.py
+          uv run --python 3.12 python -m unittest discover -s tests -p 'test_*.py'
           uv run --python 3.12 --with ruff ruff check docbase.py tests
 
       - name: Build release archives
@@ -38,12 +38,16 @@ jobs:
 
           project="docbase-cli-for-agents"
           stem="${project}_${RELEASE_TAG}"
+          expected_version="${RELEASE_TAG#v}"
+          actual_version="$(sed -n 's/^VERSION = "\([^"]*\)"/\1/p' docbase.py)"
+          test -n "${actual_version}"
+          test "${actual_version}" = "${expected_version}"
           rm -rf build dist
           mkdir -p "build/${stem}/bin" "build/${stem}/docs" dist
 
           cp docbase.py README.md LICENSE NOTICE "build/${stem}/"
           cp bin/docbase "build/${stem}/bin/"
-          cp docs/*.md "build/${stem}/docs/"
+          cp -R docs/. "build/${stem}/docs/"
 
           tar -C build -czf "dist/${stem}.tar.gz" "${stem}"
           (cd build && python3 -m zipfile -c "../dist/${stem}.zip" "${stem}")

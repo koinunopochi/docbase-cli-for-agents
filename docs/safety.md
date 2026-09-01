@@ -1,8 +1,9 @@
 # Safety model
 
 This CLI includes safeguards because an AI agent may be the caller. The
-safeguards reduce accidental publication or mutation; they do not replace
-human authorization or DocBase permissions.
+safeguards reduce accidental publication or mutation. They do not replace
+human authorization or DocBase permissions, but the CLI itself refuses every
+API mutation until the caller supplies `--confirm`.
 
 ## New posts
 
@@ -14,7 +15,8 @@ state.
 ./bin/docbase create-post \
   --title "A draft" \
   --body "内容" \
-  --tag example
+  --tag example \
+  --confirm
 ```
 
 To publish a post, use an owner-checked update operation after the draft has
@@ -45,17 +47,21 @@ when a patch operation spans a heading boundary.
 
 Before `update-post`, `delete-post`, `archive-post`, `unarchive-post`, or
 `patch-post-body`, the CLI compares the authenticated profile ID with the post
-creator ID. A mismatch or an unavailable ID blocks the operation. This CLI has
-no path for bypassing that check.
+creator ID. A mismatch or an unavailable ID blocks the operation. `--force`
+is not available in this CLI, so the check cannot be bypassed. `--confirm` is
+still required.
 
 ## Other mutations
 
 Comments and group membership are API mutations but do not use the post-owner
-check. Confirm the post, comment, group, and user IDs before invoking them.
+check. Confirm the post, comment, group, and user IDs, then pass `--confirm`.
 
 Attachment uploads are also API mutations. Confirm the target team and each
-local file path before invoking `upload-attachment`. The command sends file
-contents to DocBase and does not publish a post by itself.
+local file path, then pass `--confirm`. The command sends file contents to
+DocBase and does not publish a post by itself.
+
+Attachment downloads do not overwrite an existing local path by default. Use
+`--overwrite --confirm` only after checking the destination.
 
 ## Agent contract
 
